@@ -1,0 +1,63 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: payload
+      POSTGRES_PASSWORD: payload
+      POSTGRES_DB: payload
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - testdytecmsstarter
+
+  payload:
+    build:
+      context: ./payload
+      dockerfile: Dockerfile.dev
+    ports:
+      - "4001:3000"
+    volumes:
+      - ./payload/src:/app/src
+      - ./payload/public:/app/public
+      - ./payload/data:/app/data
+      - payload_node_modules:/app/node_modules
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://payload:payload@postgres:5432/payload
+      - PAYLOAD_SECRET=development-secret-key-change-in-production
+    depends_on:
+      - postgres
+    networks:
+      - testdytecmsstarter
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./web/pages:/app/pages
+      - ./web/components:/app/components
+      - ./web/composables:/app/composables
+      - ./web/layouts:/app/layouts
+      - ./web/types:/app/types
+      - ./web/assets:/app/assets
+      - ./web/public:/app/public
+      - ./web/nuxt.config.ts:/app/nuxt.config.ts
+    environment:
+      - NUXT_PUBLIC_PAYLOAD_API_URL=http://payload:3000/api
+    depends_on:
+      - payload
+    networks:
+      - testdytecmsstarter
+
+networks:
+  testdytecmsstarter:
+    driver: bridge
+
+volumes:
+  payload_node_modules:
+  postgres_data:

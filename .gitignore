@@ -32,5 +32,5 @@
 **/.cache/
 
 # test outputs
-./safeandbrave/
-./testdytecmsstarter/
+safeandbrave
+testdytecmsstarter

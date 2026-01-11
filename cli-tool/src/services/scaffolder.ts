@@ -168,6 +168,7 @@ export default buildConfig({
     pool: {
       connectionString: process.env.DATABASE_URL || '',
     },
+    push: process.env.NODE_ENV === 'development',
   }),
   editor: lexicalEditor({
     features: ({ defaultFeatures }) => [
@@ -177,8 +178,38 @@ export default buildConfig({
           media: {
             fields: [
               {
+                name: 'size',
+                type: 'select',
+                defaultValue: 'medium',
+                options: [
+                  { label: 'Small (400px)', value: 'small' },
+                  { label: 'Medium (600px)', value: 'medium' },
+                  { label: 'Large (900px)', value: 'large' },
+                  { label: 'Full Width', value: 'full' },
+                ],
+                admin: {
+                  description: 'Display size of the image',
+                },
+              },
+              {
+                name: 'alignment',
+                type: 'select',
+                defaultValue: 'center',
+                options: [
+                  { label: 'Left', value: 'left' },
+                  { label: 'Center', value: 'center' },
+                  { label: 'Right', value: 'right' },
+                ],
+                admin: {
+                  description: 'Image alignment',
+                },
+              },
+              {
                 name: 'caption',
                 type: 'text',
+                admin: {
+                  description: 'Optional caption below the image',
+                },
               },
             ],
           },
@@ -194,8 +225,8 @@ export default buildConfig({
     schemaOutputFile: path.resolve(dirname, 'generated-schema.graphql'),
   },
   cors: [
-    'http://localhost:3000',
-    'http://localhost:4001',
+    'http://localhost:3201',
+    'http://localhost:3202',
     process.env.FRONTEND_URL || '',
   ].filter(Boolean),
   upload: {
@@ -248,6 +279,7 @@ export default buildConfig({
     join(collectionsDir, 'Pages.ts'),
     `import type { CollectionConfig } from 'payload'
 import { triggerDeploy } from '../hooks/triggerDeploy'
+import { Hero, RichText } from '../blocks'
 
 export const Pages: CollectionConfig = {
   slug: 'pages',
@@ -302,9 +334,12 @@ export const Pages: CollectionConfig = {
       },
     },
     {
-      name: 'body',
-      type: 'richText',
-      required: true,
+      name: 'content',
+      type: 'blocks',
+      blocks: [Hero, RichText],
+      admin: {
+        description: 'Add and arrange content blocks for this page',
+      },
     },
   ],
 }
@@ -321,7 +356,7 @@ export const Media: CollectionConfig = {
     read: () => true,
   },
   upload: {
-    staticDir: '../public/uploads',
+    staticDir: './public/uploads',
     mimeTypes: ['image/*'],
     imageSizes: [
       {
@@ -407,6 +442,121 @@ export const Users: CollectionConfig = {
     },
   ],
 }
+`
+  )
+
+  // Blocks
+  writeFileSync(
+    join(blocksDir, 'Hero.ts'),
+    `import type { Block } from 'payload'
+
+export const Hero: Block = {
+  slug: 'hero',
+  labels: {
+    singular: 'Hero',
+    plural: 'Heroes',
+  },
+  imageURL: '/assets/blocks/hero.png',
+  fields: [
+    {
+      name: 'headline',
+      type: 'text',
+      required: true,
+      admin: {
+        description: 'The main headline text',
+      },
+    },
+    {
+      name: 'subheadline',
+      type: 'textarea',
+      admin: {
+        description: 'Supporting text below the headline',
+      },
+    },
+    {
+      name: 'backgroundImage',
+      type: 'upload',
+      relationTo: 'media',
+      admin: {
+        description: 'Background image for the hero section',
+      },
+    },
+    {
+      name: 'alignment',
+      type: 'select',
+      defaultValue: 'center',
+      options: [
+        { label: 'Left', value: 'left' },
+        { label: 'Center', value: 'center' },
+        { label: 'Right', value: 'right' },
+      ],
+      admin: {
+        description: 'Text alignment within the hero',
+      },
+    },
+    {
+      name: 'links',
+      type: 'array',
+      maxRows: 2,
+      admin: {
+        description: 'Call-to-action buttons (max 2)',
+      },
+      fields: [
+        {
+          name: 'label',
+          type: 'text',
+          required: true,
+        },
+        {
+          name: 'url',
+          type: 'text',
+          required: true,
+          admin: {
+            description: 'URL or path (e.g., /contact or https://example.com)',
+          },
+        },
+        {
+          name: 'variant',
+          type: 'select',
+          defaultValue: 'solid',
+          options: [
+            { label: 'Solid (Primary)', value: 'solid' },
+            { label: 'Outline', value: 'outline' },
+            { label: 'Ghost', value: 'ghost' },
+          ],
+        },
+      ],
+    },
+  ],
+}
+`
+  )
+
+  writeFileSync(
+    join(blocksDir, 'RichText.ts'),
+    `import type { Block } from 'payload'
+
+export const RichText: Block = {
+  slug: 'richText',
+  labels: {
+    singular: 'Rich Text',
+    plural: 'Rich Text',
+  },
+  fields: [
+    {
+      name: 'content',
+      type: 'richText',
+      required: true,
+    },
+  ],
+}
+`
+  )
+
+  writeFileSync(
+    join(blocksDir, 'index.ts'),
+    `export { Hero } from './Hero'
+export { RichText } from './RichText'
 `
   )
 
@@ -749,20 +899,25 @@ async function generateWebFiles(
   context: TemplateContext
 ): Promise<void> {
   const webDir = join(targetDir, 'web')
-  const pagesDir = join(webDir, 'pages')
-  const componentsDir = join(webDir, 'components')
-  const composablesDir = join(webDir, 'composables')
-  const layoutsDir = join(webDir, 'layouts')
-  const typesDir = join(webDir, 'types')
-  const assetsDir = join(webDir, 'assets', 'css')
+  const appDir = join(webDir, 'app')
+  const pagesDir = join(appDir, 'pages')
+  const componentsDir = join(appDir, 'components')
+  const blocksComponentsDir = join(componentsDir, 'blocks')
+  const composablesDir = join(appDir, 'composables')
+  const layoutsDir = join(appDir, 'layouts')
+  const typesDir = join(appDir, 'types')
+  const assetsDir = join(appDir, 'assets', 'css')
+  const storybookDir = join(webDir, '.storybook')
 
   // Create directories
   mkdirSync(pagesDir, { recursive: true })
   mkdirSync(componentsDir, { recursive: true })
+  mkdirSync(blocksComponentsDir, { recursive: true })
   mkdirSync(composablesDir, { recursive: true })
   mkdirSync(layoutsDir, { recursive: true })
   mkdirSync(typesDir, { recursive: true })
   mkdirSync(assetsDir, { recursive: true })
+  mkdirSync(storybookDir, { recursive: true })
 
   // package.json
   const webPackageJson = {
@@ -771,19 +926,46 @@ async function generateWebFiles(
     type: 'module',
     scripts: {
       build: 'nuxt build',
-      dev: 'nuxt dev',
+      dev: 'concurrently -n nuxt,storybook -c cyan,magenta "nuxt dev" "storybook dev -p 6006 --no-open"',
+      'dev:nuxt': 'nuxt dev',
+      'dev:storybook': 'storybook dev -p 6006',
       generate: 'nuxt generate',
       preview: 'nuxt preview',
       postinstall: 'nuxt prepare',
+      storybook: 'storybook dev -p 6006',
+      'build-storybook': 'storybook build',
     },
     dependencies: {
-      nuxt: '^3.14.0',
+      '@nuxt/ui-pro': '^1',
+      nuxt: '^4.2.2',
       vue: '^3.5.0',
       'vue-router': '^4.5.0',
     },
     devDependencies: {
-      '@nuxtjs/tailwindcss': '^6.14.0',
+      '@chromatic-com/storybook': '^4.1.3',
+      '@nuxt/fonts': '^0.11.0',
+      '@nuxtjs/storybook': '^9.1.0-29411911.f34c865',
+      '@storybook/addon-a11y': '^10.1.10',
+      '@storybook/addon-docs': '^10.1.10',
+      '@storybook/addon-vitest': '^10.1.10',
+      '@types/node': '^22',
+      '@vitejs/plugin-vue': '^6.0.3',
+      '@vitest/browser-playwright': '^4.0.16',
+      '@vitest/coverage-v8': '^4.0.16',
+      autoprefixer: '^10.4.23',
+      concurrently: '^9.2.1',
+      playwright: '^1.57.0',
+      storybook: '^10.1.10',
+      tailwindcss: '^3.4.19',
+      vitest: '^4.0.16',
     },
+    overrides: {
+      'storybook': '^10.1.10',
+      '@storybook/builder-vite': '^10.1.10',
+      '@storybook/vue3': '^10.1.10',
+      '@storybook/vue3-vite': '^10.1.10',
+      '@storybook/csf-plugin': '^10.1.10'
+    }
   }
   writeFileSync(
     join(webDir, 'package.json'),
@@ -804,10 +986,18 @@ async function generateWebFiles(
     join(webDir, 'nuxt.config.ts'),
     `// https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
-  compatibilityDate: '2024-11-01',
+  compatibilityDate: '2025-01-01',
   devtools: { enabled: true },
 
-  modules: ['@nuxtjs/tailwindcss'],
+  extends: ['@nuxt/ui-pro'],
+  modules: ['@nuxt/ui', '@nuxt/fonts'],
+
+  fonts: {
+    families: [
+      { name: 'Inter', provider: 'google', weights: [400, 500, 600, 700] },
+      { name: 'Playfair Display', provider: 'google', weights: [400, 500, 600, 700] },
+    ],
+  },
 ${baseURLConfig}
   ssr: true,
 
@@ -816,12 +1006,20 @@ ${baseURLConfig}
       crawlLinks: true,
       routes: ['/'],
       failOnError: false
+    },
+    routeRules: {
+      '/api/**': {
+        proxy: (process.env.NUXT_PUBLIC_PAYLOAD_API_URL || 'http://localhost:3202/api') + '/**'
+      }
     }
   },
 
   runtimeConfig: {
+    // Server-side only (can use Docker internal hostname)
+    payloadApiUrl: process.env.PAYLOAD_API_URL || 'http://localhost:3202/api',
     public: {
-      payloadApiUrl: process.env.NUXT_PUBLIC_PAYLOAD_API_URL || 'http://localhost:4001/api'
+      // Client-side (must be browser-accessible)
+      payloadApiUrl: process.env.NUXT_PUBLIC_PAYLOAD_API_URL || 'http://localhost:3202/api'
     }
   },
 
@@ -856,13 +1054,15 @@ CMD ["npm", "run", "dev"]
   // types/page.ts
   writeFileSync(
     join(typesDir, 'page.ts'),
-    `export interface Page {
+    `import type { ContentBlock } from './blocks'
+
+export interface Page {
   id: string
   title: string
   slug: string
   showInMenu: boolean
   menuOrder?: number
-  body: unknown // Rich text content
+  content?: ContentBlock[]
   createdAt: string
   updatedAt: string
 }
@@ -882,25 +1082,121 @@ export interface PagesResponse {
 `
   )
 
+  // types/blocks.ts
+  writeFileSync(
+    join(typesDir, 'blocks.ts'),
+    `import type { Media } from './media'
+
+export interface HeroLink {
+  label: string
+  url: string
+  variant?: 'solid' | 'outline' | 'ghost'
+  id?: string
+}
+
+export interface HeroBlock {
+  id: string
+  blockType: 'hero'
+  headline: string
+  subheadline?: string
+  backgroundImage?: Media | string
+  alignment?: 'left' | 'center' | 'right'
+  links?: HeroLink[]
+}
+
+export interface RichTextBlock {
+  id: string
+  blockType: 'richText'
+  content: unknown
+}
+
+// Union type for all block types - add more as they are created
+export type ContentBlock = HeroBlock | RichTextBlock
+`
+  )
+
+  // types/media.ts
+  writeFileSync(
+    join(typesDir, 'media.ts'),
+    `export interface Media {
+  id: string
+  alt?: string
+  caption?: string
+  url?: string
+  thumbnailURL?: string
+  filename?: string
+  mimeType?: string
+  filesize?: number
+  width?: number
+  height?: number
+  sizes?: {
+    thumbnail?: MediaSize
+    small?: MediaSize
+    medium?: MediaSize
+    large?: MediaSize
+  }
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MediaSize {
+  url?: string
+  width?: number
+  height?: number
+  mimeType?: string
+  filesize?: number
+  filename?: string
+}
+`
+  )
+
   // composables/usePayload.ts
   writeFileSync(
     join(composablesDir, 'usePayload.ts'),
     `import type { Page, PagesResponse } from '~/types/page'
 
-export function usePages() {
+// Returns the correct API URL based on context (server uses Docker internal, client uses public)
+export function usePayloadApiUrl() {
   const config = useRuntimeConfig()
-  return useFetch<PagesResponse>(\`\${config.public.payloadApiUrl}/pages\`, {
+  return import.meta.server ? config.payloadApiUrl : config.public.payloadApiUrl
+}
+
+// Returns the public payload base URL (for media URLs that need to work in the browser)
+export function usePayloadBaseUrl() {
+  const config = useRuntimeConfig()
+  // Always use public URL since media URLs are used in <img> tags rendered in the browser
+  // Remove '/api' suffix to get base URL
+  return config.public.payloadApiUrl.replace(/\\/api$/, '')
+}
+
+// Convert a relative media URL to an absolute URL
+export function useMediaUrl(url: string | undefined | null): string | undefined {
+  if (!url) return undefined
+  // If already absolute, return as-is
+  if (url.startsWith('http://') || url.startsWith('https://')) return url
+  // Prepend payload base URL
+  const baseUrl = usePayloadBaseUrl()
+  return \`\${baseUrl}\${url}\`
+}
+
+export function usePages() {
+  const apiUrl = usePayloadApiUrl()
+  const result = useFetch<PagesResponse>(\`\${apiUrl}/pages\`, {
     query: { limit: 100 },
     key: 'pages',
     timeout: 10000,
     retry: 1,
-    transform: (data) => data.docs
   })
+
+  return {
+    ...result,
+    data: computed(() => result.data.value?.docs ?? [])
+  }
 }
 
 export function useMenuPages() {
-  const config = useRuntimeConfig()
-  return useFetch<PagesResponse>(\`\${config.public.payloadApiUrl}/pages\`, {
+  const apiUrl = usePayloadApiUrl()
+  const result = useFetch<PagesResponse>(\`\${apiUrl}/pages\`, {
     query: {
       'where[showInMenu][equals]': 'true',
       sort: 'menuOrder',
@@ -909,15 +1205,19 @@ export function useMenuPages() {
     key: 'menuPages',
     timeout: 10000,
     retry: 1,
-    transform: (data) => data.docs
   })
+
+  return {
+    ...result,
+    data: computed(() => result.data.value?.docs ?? [])
+  }
 }
 
 export function usePage(slug: MaybeRefOrGetter<string>) {
-  const config = useRuntimeConfig()
+  const apiUrl = usePayloadApiUrl()
   const slugValue = toValue(slug)
 
-  return useFetch<PagesResponse>(\`\${config.public.payloadApiUrl}/pages\`, {
+  const result = useFetch<PagesResponse>(\`\${apiUrl}/pages\`, {
     query: {
       'where[slug][equals]': slugValue,
       limit: 1
@@ -925,28 +1225,36 @@ export function usePage(slug: MaybeRefOrGetter<string>) {
     key: \`page-\${slugValue}\`,
     timeout: 10000,
     retry: 1,
-    transform: (data) => {
-      if (data.docs.length === 0) {
-        throw createError({
-          statusCode: 404,
-          statusMessage: 'Page not found'
-        })
-      }
-      return data.docs[0]
-    }
   })
+
+  return {
+    ...result,
+    data: computed<Page | null>(() => result.data.value?.docs?.[0] ?? null)
+  }
 }
 `
   )
 
   // app.vue
   writeFileSync(
-    join(webDir, 'app.vue'),
+    join(appDir, 'app.vue'),
     `<template>
   <NuxtLayout>
-    <NuxtPage />
+    <NuxtPage :key="$route.fullPath" />
   </NuxtLayout>
 </template>
+`
+  )
+
+  // app.config.ts
+  writeFileSync(
+    join(appDir, 'app.config.ts'),
+    `export default defineAppConfig({
+  ui: {
+    primary: 'primary',
+    gray: 'gray',
+  },
+})
 `
   )
 
@@ -954,14 +1262,17 @@ export function usePage(slug: MaybeRefOrGetter<string>) {
   writeFileSync(
     join(layoutsDir, 'default.vue'),
     `<template>
-  <div class="min-h-screen flex flex-col">
+  <div class="min-h-screen flex flex-col font-sans">
     <TheHeader />
-    <main class="flex-1 container mx-auto px-4 py-8">
+    <main class="flex-1">
       <slot />
     </main>
-    <footer class="bg-gray-100 py-4 text-center text-gray-600">
-      <p>&copy; {{ new Date().getFullYear() }} ${context.projectName}</p>
-    </footer>
+    <UContainer>
+      <UDivider />
+      <footer class="py-6 text-center text-neutral-500">
+        <p>&copy; {{ new Date().getFullYear() }} ${context.projectName}</p>
+      </footer>
+    </UContainer>
   </div>
 </template>
 `
@@ -971,29 +1282,42 @@ export function usePage(slug: MaybeRefOrGetter<string>) {
   writeFileSync(
     join(componentsDir, 'TheHeader.vue'),
     `<script setup lang="ts">
-const { data: menuPages } = await useMenuPages()
+import type { PagesResponse } from '~/types/page'
+
+const apiUrl = usePayloadApiUrl()
+
+const { data: response } = await useFetch<PagesResponse>(\`\${apiUrl}/pages\`, {
+  query: {
+    'where[showInMenu][equals]': 'true',
+    sort: 'menuOrder',
+    limit: 100
+  },
+  key: 'menuPages',
+  timeout: 10000,
+  retry: 1,
+})
+
+const navLinks = computed(() => {
+  const pages = response.value?.docs ?? []
+  return pages.map((page) => ({
+    label: page.title,
+    to: \`/\${page.slug}\`,
+  }))
+})
 </script>
 
 <template>
-  <header class="bg-white shadow">
-    <nav class="container mx-auto px-4 py-4">
-      <div class="flex items-center justify-between">
-        <NuxtLink to="/" class="text-xl font-bold text-gray-800">
-          ${context.projectName}
-        </NuxtLink>
-        <ul class="flex space-x-6">
-          <li v-for="page in menuPages" :key="page.id">
-            <NuxtLink
-              :to="\`/\${page.slug}\`"
-              class="text-gray-600 hover:text-gray-800 transition-colors"
-            >
-              {{ page.title }}
-            </NuxtLink>
-          </li>
-        </ul>
-      </div>
-    </nav>
-  </header>
+  <UHeader>
+    <template #left>
+      <NuxtLink to="/" class="text-xl font-bold font-display">
+        ${context.projectName}
+      </NuxtLink>
+    </template>
+
+    <template #right>
+      <UHorizontalNavigation :links="navLinks" />
+    </template>
+  </UHeader>
 </template>
 `
   )
@@ -1002,55 +1326,235 @@ const { data: menuPages } = await useMenuPages()
   writeFileSync(
     join(componentsDir, 'RichTextRenderer.vue'),
     `<script setup lang="ts">
+import type { Media } from '~/types/media'
+
 defineProps<{
   content: unknown
 }>()
 
-function renderNode(node: Record<string, unknown>): string {
+// Get the base URL for media - needs to be called at setup time
+const payloadBaseUrl = usePayloadBaseUrl()
+
+// Escape HTML entities to prevent XSS
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
+
+function getMediaUrl(url: string | undefined | null): string | undefined {
+  if (!url) return undefined
+  if (url.startsWith('http://') || url.startsWith('https://')) return url
+  return \`\${payloadBaseUrl}\${url}\`
+}
+
+// Lexical format bitmask values
+const IS_BOLD = 1
+const IS_ITALIC = 2
+const IS_STRIKETHROUGH = 4
+const IS_UNDERLINE = 8
+const IS_CODE = 16
+const IS_SUBSCRIPT = 32
+const IS_SUPERSCRIPT = 64
+
+interface LexicalNode {
+  type?: string
+  tag?: string
+  format?: number | string
+  indent?: number
+  direction?: string
+  version?: number
+  text?: string
+  children?: LexicalNode[]
+  listType?: 'bullet' | 'number' | 'check'
+  checked?: boolean
+  url?: string
+  newTab?: boolean
+  rel?: string
+  fields?: Record<string, unknown>
+  // For upload nodes - value can be list value (number) or media object
+  value?: number | Media | string | null
+  relationTo?: string
+}
+
+function renderNode(node: LexicalNode): string {
   if (!node || typeof node !== 'object') return ''
 
-  const type = node.type as string | undefined
-  const children = node.children as Record<string, unknown>[] | undefined
-  const text = node.text as string | undefined
+  const type = node.type
+  const children = node.children
+  const text = node.text
 
+  // Handle text nodes
   if (text !== undefined) {
-    let result = text
-    if (node.bold) result = \`<strong>\${result}</strong>\`
-    if (node.italic) result = \`<em>\${result}</em>\`
-    if (node.underline) result = \`<u>\${result}</u>\`
+    let result = escapeHtml(text)
+    const format = typeof node.format === 'number' ? node.format : 0
+
+    if (format & IS_BOLD) result = \`<strong>\${result}</strong>\`
+    if (format & IS_ITALIC) result = \`<em>\${result}</em>\`
+    if (format & IS_UNDERLINE) result = \`<u>\${result}</u>\`
+    if (format & IS_STRIKETHROUGH) result = \`<s>\${result}</s>\`
+    if (format & IS_CODE) result = \`<code class="bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded text-sm font-mono">\${result}</code>\`
+    if (format & IS_SUBSCRIPT) result = \`<sub>\${result}</sub>\`
+    if (format & IS_SUPERSCRIPT) result = \`<sup>\${result}</sup>\`
     return result
   }
 
+  // Recursively render children
   const childrenHtml = children?.map(renderNode).join('') || ''
 
   switch (type) {
-    case 'paragraph':
-      return \`<p class="mb-4">\${childrenHtml}</p>\`
-    case 'heading':
-      const tag = \`h\${(node.tag as string)?.replace('h', '') || '2'}\`
-      return \`<\${tag} class="font-bold mb-4">\${childrenHtml}</\${tag}>\`
-    case 'list':
-      const listTag = node.listType === 'number' ? 'ol' : 'ul'
-      return \`<\${listTag} class="list-disc list-inside mb-4">\${childrenHtml}</\${listTag}>\`
-    case 'listitem':
-      return \`<li>\${childrenHtml}</li>\`
-    case 'link':
-      return \`<a href="\${node.url || '#'}" class="text-blue-600 hover:underline">\${childrenHtml}</a>\`
-    default:
+    case 'root':
       return childrenHtml
+
+    case 'paragraph': {
+      if (!childrenHtml.trim()) return '<p class="mb-4">&nbsp;</p>' // Empty paragraph
+      const align = getTextAlign(node.format)
+      return \`<p class="mb-4\${align}">\${childrenHtml}</p>\`
+    }
+
+    case 'heading': {
+      const level = node.tag?.replace('h', '') || '2'
+      const align = getTextAlign(node.format)
+      const sizeClass = getHeadingSize(level)
+      return \`<h\${level} class="\${sizeClass} font-bold mb-4\${align}">\${childrenHtml}</h\${level}>\`
+    }
+
+    case 'list': {
+      const listTag = node.listType === 'number' ? 'ol' : 'ul'
+      const listClass = node.listType === 'number'
+        ? 'list-decimal list-inside mb-4 space-y-1'
+        : 'list-disc list-inside mb-4 space-y-1'
+      return \`<\${listTag} class="\${listClass}">\${childrenHtml}</\${listTag}>\`
+    }
+
+    case 'listitem': {
+      const indent = node.indent ? \` style="margin-left: \${node.indent * 1.5}rem"\` : ''
+      if (node.checked !== undefined) {
+        // Checkbox list item
+        const checked = node.checked ? 'checked' : ''
+        return \`<li\${indent} class="flex items-start gap-2"><input type="checkbox" \${checked} disabled class="mt-1" /><span>\${childrenHtml}</span></li>\`
+      }
+      return \`<li\${indent}>\${childrenHtml}</li>\`
+    }
+
+    case 'link': {
+      const url = node.url || '#'
+      const target = node.newTab ? ' target="_blank"' : ''
+      const rel = node.newTab ? ' rel="noopener noreferrer"' : ''
+      return \`<a href="\${escapeHtml(url)}" class="text-primary-600 hover:text-primary-700 underline"\${target}\${rel}>\${childrenHtml}</a>\`
+    }
+
+    case 'autolink': {
+      const url = node.url || '#'
+      return \`<a href="\${escapeHtml(url)}" class="text-primary-600 hover:text-primary-700 underline">\${childrenHtml}</a>\`
+    }
+
+    case 'quote': {
+      return \`<blockquote class="border-l-4 border-gray-300 dark:border-gray-600 pl-4 my-4 italic text-gray-600 dark:text-gray-400">\${childrenHtml}</blockquote>\`
+    }
+
+    case 'horizontalrule': {
+      return '<hr class="my-8 border-gray-200 dark:border-gray-700" />'
+    }
+
+    case 'linebreak': {
+      return '<br />'
+    }
+
+    case 'tab': {
+      return '&nbsp;&nbsp;&nbsp;&nbsp;'
+    }
+
+    case 'code': {
+      // Code block (multi-line code)
+      const language = (node as LexicalNode & { language?: string }).language || ''
+      return \`<pre class="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg overflow-x-auto my-4"><code class="text-sm font-mono"\${language ? \` data-language="\${escapeHtml(language)}"\` : ''}>\${childrenHtml}</code></pre>\`
+    }
+
+    case 'upload': {
+      // Handle uploaded media (images)
+      const mediaValue = node.value as Media | string | null | undefined
+      if (!mediaValue || typeof mediaValue === 'string') return ''
+      const url = getMediaUrl(mediaValue.url)
+      if (!url) return ''
+      const alt = escapeHtml(mediaValue.alt || '')
+      const fields = node.fields || {}
+      const size = (fields.size as string) || 'medium'
+      const alignment = (fields.alignment as string) || 'center'
+      const caption = fields.caption as string | undefined
+
+      // Size classes
+      const sizeStyles: Record<string, string> = {
+        small: 'max-w-[400px]',
+        medium: 'max-w-[600px]',
+        large: 'max-w-[900px]',
+        full: 'max-w-full',
+      }
+      const sizeClass = sizeStyles[size] || sizeStyles.medium
+
+      // Alignment classes for figure container
+      const alignmentStyles: Record<string, string> = {
+        left: 'mr-auto',
+        center: 'mx-auto',
+        right: 'ml-auto',
+      }
+      const alignClass = alignmentStyles[alignment] || alignmentStyles.center
+
+      let html = \`<figure class="my-6 \${sizeClass} \${alignClass}">\`
+      html += \`<img src="\${url}" alt="\${alt}" class="rounded-lg w-full h-auto" loading="lazy" />\`
+      if (caption) {
+        html += \`<figcaption class="text-sm text-gray-500 dark:text-gray-400 mt-2 text-center">\${escapeHtml(caption)}</figcaption>\`
+      }
+      html += '</figure>'
+      return html
+    }
+
+    default:
+      // For unknown node types, just render children
+      return childrenHtml
+  }
+}
+
+function getTextAlign(format: number | string | undefined): string {
+  if (typeof format === 'string') {
+    switch (format) {
+      case 'left': return ' text-left'
+      case 'center': return ' text-center'
+      case 'right': return ' text-right'
+      case 'justify': return ' text-justify'
+      default: return ''
+    }
+  }
+  // Lexical also uses numeric format for alignment on block nodes
+  // These are different from text formatting bitmasks
+  return ''
+}
+
+function getHeadingSize(level: string): string {
+  switch (level) {
+    case '1': return 'text-4xl'
+    case '2': return 'text-3xl'
+    case '3': return 'text-2xl'
+    case '4': return 'text-xl'
+    case '5': return 'text-lg'
+    case '6': return 'text-base'
+    default: return 'text-2xl'
   }
 }
 
 function renderContent(content: unknown): string {
   if (!content || typeof content !== 'object') return ''
-  const root = content as { root?: { children?: Record<string, unknown>[] } }
+  const root = content as { root?: LexicalNode }
   if (!root.root?.children) return ''
   return root.root.children.map(renderNode).join('')
 }
 </script>
 
 <template>
-  <div class="prose max-w-none" v-html="renderContent(content)" />
+  <div class="prose prose-gray dark:prose-invert max-w-none" v-html="renderContent(content)" />
 </template>
 `
   )
@@ -1059,35 +1563,44 @@ function renderContent(content: unknown): string {
   writeFileSync(
     join(pagesDir, 'index.vue'),
     `<script setup lang="ts">
-const config = useRuntimeConfig()
+import type { Page, PagesResponse } from '~/types/page'
 
-// Fetch data at build time for SSG with aggressive timeout and retry limits
-const { data: response, error } = await useFetch(\`\${config.public.payloadApiUrl}/pages\`, {
+const apiUrl = usePayloadApiUrl()
+
+const { data: response } = await useFetch<PagesResponse>(\`\${apiUrl}/pages\`, {
+  key: 'page-home',
   query: {
     'where[slug][equals]': 'home',
-    limit: 1
+    limit: 1,
+    depth: 2, // Populate relationships like backgroundImage
   },
-  timeout: 10000,
-  retry: 1,
-  onResponseError: () => {
-    // Fail silently and show fallback
-  }
 })
 
-const page = computed(() => response.value?.docs?.[0] || null)
+const page = computed<Page | null>(() => response.value?.docs?.[0] || null)
 </script>
 
 <template>
-  <div>
-    <div v-if="!page" class="text-center py-12">
-      <h1 class="text-4xl font-bold mb-4">Welcome to ${context.projectName}</h1>
-      <p class="text-gray-600">Your CMS-powered website is ready.</p>
-    </div>
+  <UContainer>
+    <!-- Default welcome when no home page exists -->
+    <UPageHero
+      v-if="!page"
+      title="Welcome to ${context.projectName}"
+      description="Your CMS-powered website is ready. Create a page with slug 'home' to customize this."
+      align="center"
+      :links="[{ label: 'Open CMS', to: 'http://localhost:3202/admin', variant: 'solid', size: 'lg' }]"
+    />
+
+    <!-- Render page content -->
     <article v-else>
-      <h1 class="text-4xl font-bold mb-6">{{ page.title }}</h1>
-      <RichTextRenderer :content="page.body" />
+      <BlocksBlockRenderer v-if="page.content?.length" :blocks="page.content" />
+
+      <!-- Empty state -->
+      <div v-else class="py-12 text-center text-neutral-500">
+        <h1 class="text-4xl font-bold mb-6">{{ page.title }}</h1>
+        <p>No content yet. Add blocks in the CMS.</p>
+      </div>
     </article>
-  </div>
+  </UContainer>
 </template>
 `
   )
@@ -1096,44 +1609,39 @@ const page = computed(() => response.value?.docs?.[0] || null)
   writeFileSync(
     join(pagesDir, '[...slug].vue'),
     `<script setup lang="ts">
-const route = useRoute()
-const config = useRuntimeConfig()
+import type { Page, PagesResponse } from '~/types/page'
 
-// slug is an array for catch-all routes, join with '/' for nested slugs
+const route = useRoute()
+const apiUrl = usePayloadApiUrl()
+
+// Get slug from route params
 const slugParam = route.params.slug
 const slug = Array.isArray(slugParam) ? slugParam.join('/') : slugParam || 'home'
 
-// Fetch data at build time for SSG with aggressive timeout and retry limits
-const { data: response, error } = await useFetch(\`\${config.public.payloadApiUrl}/pages\`, {
+const { data: response, error } = await useFetch<PagesResponse>(\`\${apiUrl}/pages\`, {
+  key: \`page-\${slug}\`,
   query: {
     'where[slug][equals]': slug,
-    limit: 1
+    limit: 1,
+    depth: 2,
   },
-  timeout: 10000,
-  retry: 1,
-  onResponseError: () => {
-    // Fail silently - will show 404
-  }
 })
 
-const page = computed(() => response.value?.docs?.[0] || null)
-
-// Handle 404 if page not found
-if (!page.value && !error.value) {
-  throw createError({
-    statusCode: 404,
-    statusMessage: 'Page Not Found'
-  })
-}
+const page = computed<Page | null>(() => response.value?.docs?.[0] || null)
 </script>
 
 <template>
-  <div>
+  <UContainer>
     <article v-if="page">
-      <h1 class="text-4xl font-bold mb-6">{{ page.title }}</h1>
-      <RichTextRenderer :content="page.body" />
+      <BlocksBlockRenderer v-if="page.content?.length" :blocks="page.content" />
+
+      <!-- Empty state -->
+      <div v-else class="py-12 text-center text-neutral-500">
+        <h1 class="text-4xl font-bold mb-6">{{ page.title }}</h1>
+        <p>No content yet. Add blocks in the CMS.</p>
+      </div>
     </article>
-  </div>
+  </UContainer>
 </template>
 `
   )
@@ -1144,13 +1652,87 @@ if (!page.value && !error.value) {
     `/** @type {import('tailwindcss').Config} */
 export default {
   content: [
-    './components/**/*.{vue,js,ts}',
-    './layouts/**/*.vue',
-    './pages/**/*.vue',
-    './app.vue',
+    './app/components/**/*.{vue,js,ts}',
+    './app/layouts/**/*.vue',
+    './app/pages/**/*.vue',
+    './app/app.vue',
+  ],
+  // Safelist classes used in dynamic rich text rendering
+  safelist: [
+    'max-w-[400px]',
+    'max-w-[600px]',
+    'max-w-[900px]',
+    'max-w-full',
+    'mr-auto',
+    'ml-auto',
+    'mx-auto',
   ],
   theme: {
-    extend: {},
+    extend: {
+      fontFamily: {
+        sans: ['Inter', 'system-ui', 'sans-serif'],
+        display: ['Playfair Display', 'Georgia', 'serif'],
+      },
+      colors: {
+        // Primary brand colors
+        primary: {
+          50: '#eef2ff',
+          100: '#e0e7ff',
+          200: '#c7d2fe',
+          300: '#a5b4fc',
+          400: '#818cf8',
+          500: '#6366f1',
+          600: '#4f46e5',
+          700: '#4338ca',
+          800: '#3730a3',
+          900: '#312e81',
+          950: '#1e1b4b',
+        },
+        // Neutral/gray scale
+        gray: {
+          50: '#f8fafc',
+          100: '#f1f5f9',
+          200: '#e2e8f0',
+          300: '#cbd5e1',
+          400: '#94a3b8',
+          500: '#64748b',
+          600: '#475569',
+          700: '#334155',
+          800: '#1e293b',
+          900: '#0f172a',
+          950: '#020617',
+        },
+        // Semantic colors
+        success: {
+          50: '#f0fdf4',
+          100: '#dcfce7',
+          500: '#22c55e',
+          600: '#16a34a',
+          700: '#15803d',
+        },
+        warning: {
+          50: '#fffbeb',
+          100: '#fef3c7',
+          500: '#f59e0b',
+          600: '#d97706',
+          700: '#b45309',
+        },
+        error: {
+          50: '#fef2f2',
+          100: '#fee2e2',
+          500: '#ef4444',
+          600: '#dc2626',
+          700: '#b91c1c',
+        },
+        info: {
+          50: '#eff6ff',
+          100: '#dbeafe',
+          500: '#3b82f6',
+          600: '#2563eb',
+          700: '#1d4ed8',
+        },
+      },
+    },
   },
   plugins: [],
 }
@@ -1174,6 +1756,323 @@ export default {
 .output/
 .env
 *.log
+
+*storybook.log
+storybook-static
+`
+  )
+
+  // components/blocks/BlockRenderer.vue
+  writeFileSync(
+    join(blocksComponentsDir, 'BlockRenderer.vue'),
+    `<script setup lang="ts">
+import type { ContentBlock } from '~/types/blocks'
+
+defineProps<{
+  blocks: ContentBlock[]
+}>()
+</script>
+
+<template>
+  <div class="blocks-container space-y-8">
+    <template v-for="block in blocks" :key="block.id">
+      <BlocksHeroBlock v-if="block.blockType === 'hero'" :block="block" />
+      <BlocksRichTextBlock v-else-if="block.blockType === 'richText'" :block="block" />
+    </template>
+  </div>
+</template>
+`
+  )
+
+  // components/blocks/HeroBlock.vue
+  writeFileSync(
+    join(blocksComponentsDir, 'HeroBlock.vue'),
+    `<script setup lang="ts">
+import type { HeroBlock as HeroBlockType } from '~/types/blocks'
+
+const props = defineProps<{
+  block: HeroBlockType
+}>()
+
+const alignmentClass = computed(() => {
+  switch (props.block.alignment) {
+    case 'left':
+      return 'left'
+    case 'right':
+      return 'right'
+    default:
+      return 'center'
+  }
+})
+
+const links = computed(() => {
+  if (!props.block.links) return []
+  return props.block.links.map((link) => ({
+    label: link.label,
+    to: link.url,
+    variant: link.variant || 'solid',
+    size: 'lg' as const,
+  }))
+})
+
+const backgroundImageUrl = computed(() => {
+  if (!props.block.backgroundImage) return undefined
+  if (typeof props.block.backgroundImage === 'string') return undefined
+  return useMediaUrl(props.block.backgroundImage.url)
+})
+</script>
+
+<template>
+  <div class="relative">
+    <div
+      v-if="backgroundImageUrl"
+      class="absolute inset-0 z-0"
+    >
+      <img
+        :src="backgroundImageUrl"
+        :alt="block.headline"
+        class="w-full h-full object-cover"
+      />
+      <div class="absolute inset-0 bg-black/50" />
+    </div>
+    <UPageHero
+      :title="block.headline"
+      :description="block.subheadline"
+      :links="links"
+      :align="alignmentClass"
+      :ui="backgroundImageUrl ? { title: 'text-white', description: 'text-white/80' } : {}"
+      :class="backgroundImageUrl ? 'relative z-10' : ''"
+    />
+  </div>
+</template>
+`
+  )
+
+  // components/blocks/RichTextBlock.vue
+  writeFileSync(
+    join(blocksComponentsDir, 'RichTextBlock.vue'),
+    `<script setup lang="ts">
+import type { RichTextBlock as RichTextBlockType } from '~/types/blocks'
+
+defineProps<{
+  block: RichTextBlockType
+}>()
+</script>
+
+<template>
+  <div class="prose prose-lg max-w-none">
+    <RichTextRenderer :content="block.content" />
+  </div>
+</template>
+`
+  )
+
+  // components/blocks/HeroBlock.stories.ts
+  writeFileSync(
+    join(blocksComponentsDir, 'HeroBlock.stories.ts'),
+    `import type { Meta, StoryObj } from '@storybook-vue/nuxt'
+import type { HeroBlock as HeroBlockType } from '~/types/blocks'
+
+import HeroBlock from './HeroBlock.vue'
+
+const meta = {
+  title: 'Blocks/HeroBlock',
+  component: HeroBlock,
+  tags: ['autodocs'],
+  argTypes: {
+    block: {
+      control: 'object',
+      description: 'The hero block data object',
+    },
+  },
+  parameters: {
+    layout: 'fullscreen',
+  },
+} satisfies Meta<typeof HeroBlock>
+
+export default meta
+type Story = StoryObj<typeof meta>
+
+const baseBlock: HeroBlockType = {
+  id: '1',
+  blockType: 'hero',
+  headline: 'Welcome to Our Platform',
+  subheadline: 'Build amazing things with our powerful tools and intuitive interface.',
+  alignment: 'center',
+}
+
+export const Default: Story = {
+  args: {
+    block: baseBlock,
+  },
+}
+
+export const LeftAligned: Story = {
+  args: {
+    block: {
+      ...baseBlock,
+      id: '2',
+      alignment: 'left',
+    },
+  },
+}
+
+export const RightAligned: Story = {
+  args: {
+    block: {
+      ...baseBlock,
+      id: '3',
+      alignment: 'right',
+    },
+  },
+}
+
+export const WithLinks: Story = {
+  args: {
+    block: {
+      ...baseBlock,
+      id: '4',
+      links: [
+        { label: 'Get Started', url: '/get-started', variant: 'solid' },
+        { label: 'Learn More', url: '/learn-more', variant: 'outline' },
+      ],
+    },
+  },
+}
+
+export const WithBackgroundImage: Story = {
+  args: {
+    block: {
+      ...baseBlock,
+      id: '5',
+      headline: 'Discover New Possibilities',
+      subheadline: 'Transform your workflow with cutting-edge solutions.',
+      backgroundImage: {
+        id: 'img-1',
+        url: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=1920&q=80',
+        alt: 'Abstract background',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      links: [
+        { label: 'Start Free Trial', url: '/trial', variant: 'solid' },
+      ],
+    },
+  },
+}
+
+export const MinimalHeadlineOnly: Story = {
+  args: {
+    block: {
+      id: '6',
+      blockType: 'hero',
+      headline: 'Simple and Clean',
+    },
+  },
+}
+`
+  )
+
+  // .storybook/main.ts
+  writeFileSync(
+    join(storybookDir, 'main.ts'),
+    `import type { StorybookConfig } from '@storybook-vue/nuxt';
+
+const config: StorybookConfig = {
+  stories: [
+    '../app/components/**/*.stories.@(js|jsx|mjs|ts|tsx)',
+  ],
+  addons: [
+    '@storybook/addon-a11y',
+    '@storybook/addon-docs',
+  ],
+  framework: '@storybook-vue/nuxt',
+};
+
+export default config;
+`
+  )
+
+  // .storybook/preview.ts
+  writeFileSync(
+    join(storybookDir, 'preview.ts'),
+    `import type { Preview } from '@storybook-vue/nuxt'
+import { h } from 'vue'
+
+const viewportDimensions: Record<string, { width: string; height: string }> = {
+  iphone14: { width: '390px', height: '844px' },
+  iphone14promax: { width: '430px', height: '932px' },
+  ipad11p: { width: '834px', height: '1194px' },
+  ipad12p: { width: '1024px', height: '1366px' },
+  pixel5: { width: '393px', height: '851px' },
+  galaxys9: { width: '360px', height: '740px' },
+}
+
+const preview: Preview = {
+  parameters: {
+    controls: {
+      matchers: {
+        color: /(background|color)$/i,
+        date: /Date$/i,
+      },
+    },
+    backgrounds: {
+      default: 'light',
+      values: [
+        { name: 'light', value: '#ffffff' },
+        { name: 'dark', value: '#1a1a1a' },
+      ],
+    },
+  },
+  globalTypes: {
+    viewport: {
+      toolbar: {
+        icon: 'mobile',
+        title: 'Viewport',
+        items: [
+          { value: 'reset', title: 'Reset (Full width)' },
+          { value: 'iphone14', title: 'iPhone 14 (390×844)' },
+          { value: 'iphone14promax', title: 'iPhone 14 Pro Max (430×932)' },
+          { value: 'ipad11p', title: 'iPad Pro 11 (834×1194)' },
+          { value: 'ipad12p', title: 'iPad Pro 12.9 (1024×1366)' },
+          { value: 'pixel5', title: 'Pixel 5 (393×851)' },
+          { value: 'galaxys9', title: 'Galaxy S9 (360×740)' },
+        ],
+        dynamicTitle: true,
+      },
+    },
+  },
+  decorators: [
+    (story, context) => {
+      const viewport = context.globals.viewport
+      const dimensions = viewportDimensions[viewport]
+
+      if (!dimensions) {
+        return { render: () => h(story()) }
+      }
+
+      return {
+        render: () => h(
+          'div',
+          {
+            style: {
+              width: dimensions.width,
+              height: dimensions.height,
+              margin: '0 auto',
+              border: '1px solid #e5e7eb',
+              borderRadius: '8px',
+              overflow: 'auto',
+              boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+            },
+          },
+          [h(story())]
+        ),
+      }
+    },
+  ],
+};
+
+export default preview;
 `
   )
 }
@@ -1204,7 +2103,7 @@ async function generateRootFiles(
       context: ./payload
       dockerfile: Dockerfile.dev
     ports:
-      - "4001:3000"
+      - "3202:3000"
     volumes:
       - ./payload/src:/app/src
       - ./payload/public:/app/public
@@ -1224,20 +2123,41 @@ async function generateRootFiles(
       context: ./web
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - "3201:3000"
     volumes:
-      - ./web/pages:/app/pages
-      - ./web/components:/app/components
-      - ./web/composables:/app/composables
-      - ./web/layouts:/app/layouts
-      - ./web/types:/app/types
-      - ./web/assets:/app/assets
+      - ./web/app/pages:/app/app/pages
+      - ./web/app/components:/app/app/components
+      - ./web/app/composables:/app/app/composables
+      - ./web/app/layouts:/app/app/layouts
+      - ./web/app/types:/app/app/types
+      - ./web/app/assets:/app/app/assets
       - ./web/public:/app/public
       - ./web/nuxt.config.ts:/app/nuxt.config.ts
     environment:
-      - NUXT_PUBLIC_PAYLOAD_API_URL=http://payload:3000/api
+      - PAYLOAD_API_URL=http://payload:3000/api
+      - NUXT_PUBLIC_PAYLOAD_API_URL=http://localhost:3202/api
     depends_on:
       - payload
+    networks:
+      - ${context.projectSlug}
+
+  storybook:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    command: npm run storybook
+    ports:
+      - "6006:6006"
+    volumes:
+      - ./web/app/pages:/app/app/pages
+      - ./web/app/components:/app/app/components
+      - ./web/app/composables:/app/app/composables
+      - ./web/app/layouts:/app/app/layouts
+      - ./web/app/types:/app/app/types
+      - ./web/app/assets:/app/app/assets
+      - ./web/public:/app/public
+      - ./web/.storybook:/app/.storybook
+      - ./web/nuxt.config.ts:/app/nuxt.config.ts
     networks:
       - ${context.projectSlug}
 
@@ -1257,14 +2177,14 @@ volumes:
     `# Payload CMS
 DATABASE_URL=postgresql://payload:payload@localhost:5432/payload
 PAYLOAD_SECRET=your-secret-key-here
-PAYLOAD_PUBLIC_SERVER_URL=http://localhost:4001
+PAYLOAD_PUBLIC_SERVER_URL=http://localhost:3202
 
 # GitHub webhook (for auto-deploy on content changes)
 GITHUB_TOKEN=your-github-token
 GITHUB_REPO=owner/repo
 
 # Frontend
-NUXT_PUBLIC_PAYLOAD_API_URL=http://localhost:4001/api
+NUXT_PUBLIC_PAYLOAD_API_URL=http://localhost:3202/api
 `
   )
 
@@ -1282,8 +2202,9 @@ A full-stack CMS project with Nuxt frontend and Payload CMS backend.
 docker-compose up
 
 # Access the services:
-# - Frontend: http://localhost:3000
-# - CMS Admin: http://localhost:4001/admin
+# - Frontend: http://localhost:3201
+# - CMS Admin: http://localhost:3202/admin
+# - Storybook: http://localhost:6006
 \`\`\`
 
 ## Project Structure
@@ -1292,11 +2213,14 @@ docker-compose up
 ├── payload/          # Payload CMS (backend)
 │   └── src/
 │       ├── collections/
+│       ├── blocks/
 │       └── payload.config.ts
 ├── web/              # Nuxt frontend
-│   ├── pages/
-│   ├── components/
-│   └── composables/
+│   ├── app/
+│   │   ├── pages/
+│   │   ├── components/
+│   │   └── composables/
+│   └── .storybook/
 └── docker-compose.yml
 \`\`\`
 

@@ -693,7 +693,9 @@ export function App({ withTestValues = false, skipToHomePageStep = false, debugS
   ): Promise<void> => {
     return new Promise((resolve, reject) => {
       const outputLines: string[] = []
+      const allOutput: string[] = []
       const maxLines = 5
+      const maxErrorLines = 50
 
       const proc = spawn('npm', ['install'], {
         cwd,
@@ -702,10 +704,16 @@ export function App({ withTestValues = false, skipToHomePageStep = false, debugS
 
       const addLine = (line: string) => {
         if (line.trim()) {
-          outputLines.push(line.trim())
-          // Keep only last 5 lines
+          const trimmedLine = line.trim()
+          outputLines.push(trimmedLine)
+          allOutput.push(trimmedLine)
+          // Keep only last 5 lines for display
           if (outputLines.length > maxLines) {
             outputLines.shift()
+          }
+          // Keep last 50 lines for error reporting
+          if (allOutput.length > maxErrorLines) {
+            allOutput.shift()
           }
           // Update step with current output
           updateStep(stepIndex, 'in_progress', undefined, [...outputLines])
@@ -726,12 +734,18 @@ export function App({ withTestValues = false, skipToHomePageStep = false, debugS
         if (code === 0) {
           resolve()
         } else {
-          reject(new Error(`npm install failed in ${label} with exit code ${code}`))
+          const errorOutput = allOutput.length > 0
+            ? `\n\nOutput:\n${allOutput.join('\n')}`
+            : ''
+          reject(new Error(`npm install failed in ${label} with exit code ${code}${errorOutput}`))
         }
       })
 
       proc.on('error', (err) => {
-        reject(new Error(`Failed to run npm install in ${label}: ${err.message}`))
+        const errorOutput = allOutput.length > 0
+          ? `\n\nOutput:\n${allOutput.join('\n')}`
+          : ''
+        reject(new Error(`Failed to run npm install in ${label}: ${err.message}${errorOutput}`))
       })
     })
   }
@@ -743,7 +757,9 @@ export function App({ withTestValues = false, skipToHomePageStep = false, debugS
   ): Promise<void> => {
     return new Promise((resolve, reject) => {
       const outputLines: string[] = []
+      const allOutput: string[] = []
       const maxLines = 5
+      const maxErrorLines = 50
 
       const proc = spawn('npx', ['payload', 'migrate:create', '--name', 'initial'], {
         cwd: payloadDir,
@@ -756,9 +772,14 @@ export function App({ withTestValues = false, skipToHomePageStep = false, debugS
 
       const addLine = (line: string) => {
         if (line.trim()) {
-          outputLines.push(line.trim())
+          const trimmedLine = line.trim()
+          outputLines.push(trimmedLine)
+          allOutput.push(trimmedLine)
           if (outputLines.length > maxLines) {
             outputLines.shift()
+          }
+          if (allOutput.length > maxErrorLines) {
+            allOutput.shift()
           }
           updateStep(stepIndex, 'in_progress', undefined, [...outputLines])
         }
@@ -778,12 +799,18 @@ export function App({ withTestValues = false, skipToHomePageStep = false, debugS
         if (code === 0) {
           resolve()
         } else {
-          reject(new Error(`Migration generation failed with exit code ${code}`))
+          const errorOutput = allOutput.length > 0
+            ? `\n\nOutput:\n${allOutput.join('\n')}`
+            : ''
+          reject(new Error(`Migration generation failed with exit code ${code}${errorOutput}`))
         }
       })
 
       proc.on('error', (err) => {
-        reject(new Error(`Failed to generate migrations: ${err.message}`))
+        const errorOutput = allOutput.length > 0
+          ? `\n\nOutput:\n${allOutput.join('\n')}`
+          : ''
+        reject(new Error(`Failed to generate migrations: ${err.message}${errorOutput}`))
       })
     })
   }

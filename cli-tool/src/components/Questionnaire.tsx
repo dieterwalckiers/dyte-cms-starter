@@ -221,7 +221,7 @@ export function Questionnaire({
             <Text color="gray">Admin: {adminEmail}</Text>
             <Box marginTop={1} flexDirection="column">
               <Text>
-                Describe your content model (or press Enter to skip):
+                Describe any other content model besides Page (or press Enter to skip):
               </Text>
               <Box marginTop={1}>
                 <Text color="green">{'> '}</Text>
@@ -229,7 +229,7 @@ export function Questionnaire({
                   value={inputValue}
                   onChange={setInputValue}
                   onSubmit={handleSubmit}
-                  placeholder="A blog has Posts and Authors..."
+                  placeholder="Post model, (title, content, author). Author model (name, email), ..."
                 />
               </Box>
             </Box>

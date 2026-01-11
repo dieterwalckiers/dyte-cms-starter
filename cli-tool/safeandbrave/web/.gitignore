@@ -1,8 +1,0 @@
-node_modules/
-.nuxt/
-.output/
-.env
-*.log
-
-*storybook.log
-storybook-static

@@ -4,24 +4,29 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Structure
 
-This is a monorepo containing the CLI tool and a test output project:
-
 ```
-dyte-cms-starter-project/
-├── cli-tool/               # The main CLI tool (see its own CLAUDE.md for details)
-└── testdytecmsstarter/     # Example output from CLI, used for testing
+dyte-cms-starter/
+└── cli-tool/               # The main CLI tool (see its own CLAUDE.md for details)
 ```
 
 ### cli-tool/
 
 The main CLI project that scaffolds and provisions full-stack CMS projects. See `cli-tool/CLAUDE.md` for detailed documentation.
 
-### testdytecmsstarter/
+## Commands
 
-A pre-generated project output from the CLI, used for testing changes without regenerating a new project each time. Structure:
+```bash
+# CLI development (in cli-tool/)
+cd cli-tool && pnpm run dev        # Run CLI
+cd cli-tool && pnpm run typecheck  # Type check
+```
+
+## Generated Project Structure
+
+When the CLI runs successfully, it creates a project with this structure:
 
 ```
-testdytecmsstarter/
+{project-name}/
 ├── payload/                # Payload CMS backend (Next.js)
 │   └── src/collections/    # CMS collections
 ├── web/                    # Nuxt 4 frontend
@@ -32,30 +37,7 @@ testdytecmsstarter/
 └── .github/workflows/      # Deploy workflow
 ```
 
-## Development Workflow
-
-When making changes to the CLI:
-1. Edit code in `cli-tool/`
-2. Test template/output changes against `testdytecmsstarter/` without full regeneration
-3. Run full CLI (`npm run dev` in cli-tool/) only when needed for end-to-end testing
-
-## Commands
-
-```bash
-# CLI development (in cli-tool/)
-cd cli-tool && pnpm run dev        # Run CLI
-cd cli-tool && pnpm run typecheck  # Type check
-
-# Test project (in testdytecmsstarter/)
-cd testdytecmsstarter && docker-compose up  # Run local dev environment
-
-# Storybook (in testdytecmsstarter/web/)
-cd testdytecmsstarter/web && pnpm exec storybook dev -p 6006  # Run locally
-# Or via Docker:
-cd testdytecmsstarter && docker-compose up storybook   # http://localhost:6006
-```
-
-## Storybook
+## Storybook (in generated projects)
 
 ### Known Limitations
 
@@ -70,23 +52,6 @@ The root cause is that `@storybook-vue/nuxt` loads Nuxt with `dev: false`, which
 - `@storybook-vue/nuxt@9.0.x` (stable) only supports Nuxt 3.x, not Nuxt 4
 - Prereleases (`9.1.0-*`) claim Nuxt 4 support but have broken internal dependencies
 - The `.npmrc` file in `web/` is configured with `strict-peer-dependencies=false` for pnpm
-
-### Storybook-specific Nuxt Config
-
-The following settings in `nuxt.config.ts` are required for Storybook compatibility:
-
-```typescript
-app: {
-  // Storybook doesn't handle custom baseURL well
-  baseURL: process.env.STORYBOOK === 'true' ? '/' : '/testdytecmsstarter/',
-},
-experimental: {
-  // App manifest not supported in Storybook context
-  appManifest: process.env.STORYBOOK !== 'true',
-},
-```
-
-The `STORYBOOK=true` environment variable is set in docker-compose.yml for the storybook service.
 
 ### Story Location
 

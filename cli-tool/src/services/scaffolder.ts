@@ -743,7 +743,8 @@ ENV HOSTNAME="0.0.0.0"
 EXPOSE 3000
 
 # Run migrations then start the app on Railway's PORT
-CMD ["sh", "-c", "pnpm run migrate && pnpm run start -- -p \${PORT:-3000}"]
+# Use npm for runtime since node_modules is pre-installed and npm is always available
+CMD ["sh", "-c", "npm run migrate && npm run start -- -p \${PORT:-3000}"]
 `
   )
 
@@ -2622,9 +2623,25 @@ jobs:
           cache: 'pnpm'
           cache-dependency-path: web/pnpm-lock.yaml
 
+      - name: Cache node_modules
+        id: cache-node-modules
+        uses: actions/cache@v4
+        with:
+          path: web/node_modules
+          key: \${{ runner.os }}-node-modules-\${{ hashFiles('web/pnpm-lock.yaml') }}
+
       - name: Install dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
         working-directory: web
         run: pnpm install --frozen-lockfile
+
+      - name: Cache Nuxt build
+        uses: actions/cache@v4
+        with:
+          path: web/.nuxt
+          key: \${{ runner.os }}-nuxt-\${{ hashFiles('web/**/*.vue', 'web/**/*.ts', 'web/nuxt.config.ts', 'web/pnpm-lock.yaml') }}
+          restore-keys: |
+            \${{ runner.os }}-nuxt-
 
       - name: Generate static site
         working-directory: web

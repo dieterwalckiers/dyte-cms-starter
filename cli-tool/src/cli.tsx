@@ -410,8 +410,8 @@ export function App({ withTestValues = false, skipToHomePageStep = false, debugS
         await runNpmInstall(payloadDir, 1, 'payload')
 
         // Install web dependencies (with live output)
-        // Uses --legacy-peer-deps due to Storybook peer dependency conflicts with Nuxt 4
-        await runNpmInstall(webDir, 1, 'web', ['--legacy-peer-deps'])
+        // Peer dependency handling configured in .npmrc (strict-peer-dependencies=false)
+        await runNpmInstall(webDir, 1, 'web')
       }
 
       updateStep(1, 'complete')

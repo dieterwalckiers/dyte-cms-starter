@@ -35,6 +35,7 @@ async function generatePayloadFiles(
   const payloadDir = join(targetDir, 'payload')
   const srcDir = join(payloadDir, 'src')
   const collectionsDir = join(srcDir, 'collections')
+  const globalsDir = join(srcDir, 'globals')
   const blocksDir = join(srcDir, 'blocks')
   const hooksDir = join(srcDir, 'hooks')
   const featuresDir = join(srcDir, 'features')
@@ -44,6 +45,7 @@ async function generatePayloadFiles(
 
   // Create directories
   mkdirSync(collectionsDir, { recursive: true })
+  mkdirSync(globalsDir, { recursive: true })
   mkdirSync(blocksDir, { recursive: true })
   mkdirSync(hooksDir, { recursive: true })
   mkdirSync(gradientTextFeatureDir, { recursive: true })
@@ -155,6 +157,7 @@ import sharp from 'sharp'
 import { Pages } from './collections/Pages'
 import { Media } from './collections/Media'
 import { Users } from './collections/Users'
+import { SiteSettings } from './globals/SiteSettings'
 ${collectionImports ? collectionImports + '\n' : ''}
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
@@ -168,6 +171,7 @@ export default buildConfig({
     },
   },
   collections: [Pages, Media, Users${collectionNames ? ', ' + collectionNames : ''}],
+  globals: [SiteSettings],
   db: postgresAdapter({
     pool: {
       connectionString: process.env.DATABASE_URL || '',
@@ -443,6 +447,40 @@ export const Users: CollectionConfig = {
       ],
       admin: {
         description: 'User role for access control',
+      },
+    },
+  ],
+}
+`
+  )
+
+  // Globals
+  writeFileSync(
+    join(globalsDir, 'SiteSettings.ts'),
+    `import type { GlobalConfig } from 'payload'
+
+export const SiteSettings: GlobalConfig = {
+  slug: 'site-settings',
+  label: 'Site Settings',
+  access: {
+    read: () => true,
+  },
+  fields: [
+    {
+      name: 'siteTitle',
+      type: 'text',
+      required: true,
+      defaultValue: 'My Site',
+      admin: {
+        description: 'The name of your website, displayed in the header when no logo is set',
+      },
+    },
+    {
+      name: 'logo',
+      type: 'upload',
+      relationTo: 'media',
+      admin: {
+        description: 'Site logo image. If set, this will be displayed in the header instead of the site title',
       },
     },
   ],
@@ -1405,10 +1443,26 @@ export interface MediaSize {
 `
   )
 
+  // types/siteSettings.ts
+  writeFileSync(
+    join(typesDir, 'siteSettings.ts'),
+    `import type { Media } from './media'
+
+export interface SiteSettings {
+  id: string
+  siteTitle: string
+  logo?: Media | string
+  createdAt: string
+  updatedAt: string
+}
+`
+  )
+
   // composables/usePayload.ts
   writeFileSync(
     join(composablesDir, 'usePayload.ts'),
     `import type { Page, PagesResponse } from '~/types/page'
+import type { SiteSettings } from '~/types/siteSettings'
 
 // Returns the correct API URL based on context (server uses Docker internal, client uses public)
 export function usePayloadApiUrl() {
@@ -1495,6 +1549,25 @@ export function usePage(slug: MaybeRefOrGetter<string>) {
     data: computed<Page | null>(() => result.data.value?.docs?.[0] ?? null)
   }
 }
+
+export function useSiteSettings() {
+  const apiUrl = usePayloadApiUrl()
+
+  const result = useFetch<SiteSettings>(\`\${apiUrl}/globals/site-settings\`, {
+    query: {
+      depth: 1, // Include media relation
+    },
+    key: 'siteSettings',
+    dedupe: 'defer',
+    timeout: 10000,
+    retry: 1,
+  })
+
+  return {
+    ...result,
+    data: computed<SiteSettings | null>(() => result.data.value ?? null)
+  }
+}
 `
   )
 
@@ -1573,6 +1646,7 @@ const props = defineProps<{
     join(componentsDir, 'TheHeader.vue'),
     `<script setup lang="ts">
 import type { PagesResponse } from '~/types/page'
+import type { Media } from '~/types/media'
 
 interface NavItem {
   label: string
@@ -1599,6 +1673,19 @@ const { data: response } = await useFetch<PagesResponse>(\`\${apiUrl}/pages\`, {
   retry: 1,
 })
 
+const { data: siteSettings } = useSiteSettings()
+
+const siteTitle = computed(() => siteSettings.value?.siteTitle ?? 'My Site')
+
+const logoUrl = computed(() => {
+  const logo = siteSettings.value?.logo
+  if (!logo) return null
+  // If logo is a string (just the ID), we can't get URL
+  if (typeof logo === 'string') return null
+  // If logo is a Media object, get the URL
+  return useMediaUrl((logo as Media).url)
+})
+
 const navItems = computed<NavItem[]>(() => {
   const pages = response.value?.docs ?? []
   return pages.map((page) => ({
@@ -1612,8 +1699,16 @@ const navItems = computed<NavItem[]>(() => {
 <template>
   <UHeader>
     <template #title>
-      <NuxtLink to="/" class="text-xl font-bold font-display">
-        ${context.projectName}
+      <NuxtLink to="/" class="flex items-center">
+        <img
+          v-if="logoUrl"
+          :src="logoUrl"
+          :alt="siteTitle"
+          class="h-8 w-auto"
+        />
+        <span v-else class="text-xl font-bold font-display">
+          {{ siteTitle }}
+        </span>
       </NuxtLink>
     </template>
 

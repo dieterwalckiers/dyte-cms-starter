@@ -15,17 +15,17 @@ The CLI uses Ink (React for terminals) for the interactive UI and Claude API for
 
 ```bash
 # Development
-npm run dev          # Run CLI in development mode (tsx)
-npm run build        # Compile TypeScript to dist/
-npm run typecheck    # Type-check without emitting
-npm start            # Run compiled CLI from dist/
+pnpm run dev          # Run CLI in development mode (tsx)
+pnpm run build        # Compile TypeScript to dist/
+pnpm run typecheck    # Type-check without emitting
+pnpm start            # Run compiled CLI from dist/
 
 # The CLI itself
-npx dyte-cms-starter # Run the scaffolder (after npm link or publishing)
+pnpm dlx dyte-cms-starter # Run the scaffolder (after pnpm link or publishing)
 
 # CLI flags
-npm run dev -- --withTestValues      # Use cached test values (requires pre-cached node_modules)
-npm run dev -- --skipToHomePageStep --debugServiceUrl=<url>  # Debug: skip to home page creation
+pnpm run dev -- --withTestValues      # Use cached test values (requires pre-cached node_modules)
+pnpm run dev -- --skipToHomePageStep --debugServiceUrl=<url>  # Debug: skip to home page creation
 ```
 
 ## Architecture
@@ -72,14 +72,14 @@ src/
 **Rollback on Failure:** The provisioning flow tracks created resources (GitHub repo, Railway project) and attempts cleanup if any step fails.
 
 **Provisioning Steps:** The 13-step provisioning flow in `src/cli.tsx`:
-1. Scaffold project files → 2. Install dependencies (npm install) → 3. Create Railway project → 4. Provision PostgreSQL → 5. Generate migrations → 6. Create GitHub repo → 7. Push code → 8. Deploy Payload CMS service → 9. Configure GitHub Secrets → 10. Wait for Payload ready (~3-5 min) → 11. Create initial Home page → 12. Enable webhook + trigger deploy → 13. Wait for GitHub Actions workflow
+1. Scaffold project files → 2. Install dependencies (pnpm install) → 3. Create Railway project → 4. Provision PostgreSQL → 5. Generate migrations → 6. Create GitHub repo → 7. Push code → 8. Deploy Payload CMS service → 9. Configure GitHub Secrets → 10. Wait for Payload ready (~3-5 min) → 11. Create initial Home page → 12. Enable webhook + trigger deploy → 13. Wait for GitHub Actions workflow
 
 ## Railway API Testing
 
 When debugging Railway integration issues, use standalone test scripts with `tsx`:
 
 ```bash
-RAILWAY_TOKEN=your-token npx tsx test-railway.ts
+RAILWAY_TOKEN=your-token pnpm exec tsx test-railway.ts
 ```
 
 ### Testing Workflow

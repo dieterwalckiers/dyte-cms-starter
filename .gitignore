@@ -31,6 +31,5 @@
 **/*.temp
 **/.cache/
 
-# test outputs
-**/safeandbrave/
-**/testdytecmsstarter/
+cli-tool/safeandbrave
+cli-tool/safeandbrave_1

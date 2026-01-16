@@ -5,6 +5,7 @@ import SelectInput from 'ink-select-input'
 interface ModeSelectionProps {
   onStartNew: () => void
   onDelete: () => void
+  onDataManagement: () => void
 }
 
 interface Item {
@@ -15,6 +16,7 @@ interface Item {
 export function ModeSelection({
   onStartNew,
   onDelete,
+  onDataManagement,
 }: ModeSelectionProps): React.ReactElement {
   const items: Item[] = [
     {
@@ -25,6 +27,10 @@ export function ModeSelection({
       label: 'Delete an existing project',
       value: 'delete',
     },
+    {
+      label: 'Manage existing project data',
+      value: 'data-management',
+    },
   ]
 
   const handleSelect = (item: Item) => {
@@ -32,6 +38,8 @@ export function ModeSelection({
       onStartNew()
     } else if (item.value === 'delete') {
       onDelete()
+    } else if (item.value === 'data-management') {
+      onDataManagement()
     }
   }
 

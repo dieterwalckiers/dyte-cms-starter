@@ -46,11 +46,12 @@ export function ProjectComplete({
         {'  '}The website will be live once the build completes.
       </Text>
       <Text> </Text>
-      <Text>{'  '}Next steps:</Text>
-      <Text>{'  '}1. Open the CMS admin and start editing content</Text>
-      <Text>{'  '}2. Create new pages in the Pages collection</Text>
-      <Text>{'  '}3. Any content changes will auto-deploy to your website</Text>
+      <Text>{'  '}Next steps, either:</Text>
+      <Text>{'  '}- Open the CMS admin and start editing content right away. Content changes auto-deploy (wait for SSG to complete)</Text>
+      <Text>{'  '}- Seed some starter content using the CLI tool</Text>
       <Text> </Text>
+      <Text>{'  '}Note: any changes you make in your instance of the cms starter that would benefit future outputs,</Text>
+      <Text>{'  '}be a sport and incorporate them in dyte-cms-starter :)</Text>
       <Text>{'─'.repeat(60)}</Text>
       <Text> </Text>
       <Box>

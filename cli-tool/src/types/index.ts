@@ -111,6 +111,7 @@ export type CLIStep =
   | 'auth-check'
   | 'mode-selection'
   | 'delete-project'
+  | 'data-management'
   | 'questionnaire'
   | 'collection-generation'
   | 'collection-preview'
@@ -125,7 +126,7 @@ export interface ProvisioningStep {
   label: string
   status: 'pending' | 'in_progress' | 'complete' | 'error'
   error?: string
-  details?: string[] // Live output lines (e.g., last 5 lines of npm install)
+  details?: string[] // Live output lines (e.g., last 5 lines of pnpm install)
 }
 
 // Credentials stored in config
@@ -138,4 +139,52 @@ export interface StoredCredentials {
 // Config file structure
 export interface AppConfig {
   lastUsedEmail?: string
+}
+
+// Content blocks for seeding (matches Payload block types)
+export interface HeroBlockData {
+  blockType: 'hero'
+  headline: string
+  subheadline?: string
+  backgroundImage?: string // Placeholder URL for seeding
+  alignment?: 'left' | 'center' | 'right'
+  links?: Array<{
+    label: string
+    url: string
+    variant?: 'solid' | 'outline' | 'ghost'
+  }>
+}
+
+export interface RichTextBlockData {
+  blockType: 'richText'
+  content: object // Lexical JSON structure
+}
+
+export type SeedContentBlock = HeroBlockData | RichTextBlockData
+
+// Seed page structure
+export interface SeedPage {
+  title: string
+  slug: string
+  showInMenu: boolean
+  menuOrder: number
+  content: SeedContentBlock[]
+}
+
+// Complete seed set
+export interface SeedSet {
+  id: string
+  name: string
+  description: string
+  requiredBlocks: string[] // e.g., ['hero', 'richText']
+  pages: SeedPage[]
+}
+
+// Data management config
+export interface DataManagementConfig {
+  projectName: string
+  environment: 'railway' | 'local'
+  payloadUrl: string
+  adminEmail: string
+  adminPassword: string
 }

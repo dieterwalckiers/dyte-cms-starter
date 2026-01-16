@@ -3,6 +3,7 @@ import { Box, Text } from 'ink'
 import { AuthCheck } from './components/AuthCheck.js'
 import { ModeSelection } from './components/ModeSelection.js'
 import { DeleteProject } from './components/DeleteProject.js'
+import { DataManagement } from './components/DataManagement.js'
 import { ProjectComplete } from './components/ProjectComplete.js'
 import { ProjectError } from './components/ProjectError.js'
 import { Questionnaire } from './components/Questionnaire.js'
@@ -26,7 +27,7 @@ import {
   waitForPayloadReady,
   authenticatePayload,
   createPage,
-  generateSimpleLexicalContent
+  generateInitialPageContent
 } from './services/payload.js'
 // getGitHubUsername can be used if we need the username for display
 import {
@@ -183,16 +184,14 @@ export function App({ withTestValues = false, skipToHomePageStep = false, debugS
               config.adminPassword
             )
 
-            const homeContent = generateSimpleLexicalContent(
-              `Welcome to ${config.projectName}! 🚀 This is your brand new CMS-powered website. Start creating amazing content!`
-            )
+            const homeContent = generateInitialPageContent(config.projectName)
 
             await createPage(debugServiceUrl, token, {
               title: 'Home',
               slug: 'home',
               showInMenu: true,
               menuOrder: 1,
-              body: homeContent
+              content: homeContent
             })
 
             updateStep(0, 'complete')
@@ -234,11 +233,23 @@ export function App({ withTestValues = false, skipToHomePageStep = false, debugS
     setStep('delete-project')
   }, [])
 
+  const handleModeDataManagement = useCallback(() => {
+    setStep('data-management')
+  }, [])
+
   const handleDeleteComplete = useCallback(() => {
     setStep('mode-selection')
   }, [])
 
   const handleDeleteCancel = useCallback(() => {
+    setStep('mode-selection')
+  }, [])
+
+  const handleDataManagementComplete = useCallback(() => {
+    setStep('mode-selection')
+  }, [])
+
+  const handleDataManagementCancel = useCallback(() => {
     setStep('mode-selection')
   }, [])
 
@@ -340,7 +351,7 @@ export function App({ withTestValues = false, skipToHomePageStep = false, debugS
       { label: 'Pushing code to GitHub', status: 'pending' },
       { label: 'Deploying Payload CMS', status: 'pending' },
       { label: 'Configuring GitHub Secrets', status: 'pending' },
-      { label: 'Waiting for Payload CMS to be ready (3-5 min - please be patient!)', status: 'pending' },
+      { label: 'Waiting for Payload CMS to be ready', status: 'pending' },
       { label: 'Creating initial Home page', status: 'pending' },
       { label: 'Enabling webhook and triggering deploy', status: 'pending' },
       { label: 'Waiting for GitHub Actions workflow to complete', status: 'pending' },
@@ -399,7 +410,8 @@ export function App({ withTestValues = false, skipToHomePageStep = false, debugS
         await runNpmInstall(payloadDir, 1, 'payload')
 
         // Install web dependencies (with live output)
-        await runNpmInstall(webDir, 1, 'web')
+        // Uses --legacy-peer-deps due to Storybook peer dependency conflicts with Nuxt 4
+        await runNpmInstall(webDir, 1, 'web', ['--legacy-peer-deps'])
       }
 
       updateStep(1, 'complete')
@@ -556,16 +568,14 @@ export function App({ withTestValues = false, skipToHomePageStep = false, debugS
         )
 
         // Create page
-        const homeContent = generateSimpleLexicalContent(
-          `Welcome to ${projectConfig.projectName}! 🚀 This is your brand new CMS-powered website. Start creating amazing content!`
-        )
+        const homeContent = generateInitialPageContent(projectConfig.projectName)
 
         await createPage(serviceUrl, token, {
           title: 'Home',
           slug: 'home',
           showInMenu: true,
           menuOrder: 1,
-          body: homeContent
+          content: homeContent
         })
 
         updateStep(10, 'complete')
@@ -689,7 +699,8 @@ export function App({ withTestValues = false, skipToHomePageStep = false, debugS
   const runNpmInstall = (
     cwd: string,
     stepIndex: number,
-    label: string
+    label: string,
+    extraArgs: string[] = []
   ): Promise<void> => {
     return new Promise((resolve, reject) => {
       const outputLines: string[] = []
@@ -697,7 +708,7 @@ export function App({ withTestValues = false, skipToHomePageStep = false, debugS
       const maxLines = 5
       const maxErrorLines = 50
 
-      const proc = spawn('npm', ['install'], {
+      const proc = spawn('pnpm', ['install', ...extraArgs], {
         cwd,
         shell: true,
       })
@@ -737,7 +748,7 @@ export function App({ withTestValues = false, skipToHomePageStep = false, debugS
           const errorOutput = allOutput.length > 0
             ? `\n\nOutput:\n${allOutput.join('\n')}`
             : ''
-          reject(new Error(`npm install failed in ${label} with exit code ${code}${errorOutput}`))
+          reject(new Error(`pnpm install failed in ${label} with exit code ${code}${errorOutput}`))
         }
       })
 
@@ -745,7 +756,7 @@ export function App({ withTestValues = false, skipToHomePageStep = false, debugS
         const errorOutput = allOutput.length > 0
           ? `\n\nOutput:\n${allOutput.join('\n')}`
           : ''
-        reject(new Error(`Failed to run npm install in ${label}: ${err.message}${errorOutput}`))
+        reject(new Error(`Failed to run pnpm install in ${label}: ${err.message}${errorOutput}`))
       })
     })
   }
@@ -761,7 +772,7 @@ export function App({ withTestValues = false, skipToHomePageStep = false, debugS
       const maxLines = 5
       const maxErrorLines = 50
 
-      const proc = spawn('npx', ['payload', 'migrate:create', '--name', 'initial'], {
+      const proc = spawn('pnpm', ['exec', 'payload', 'migrate:create', '--name', 'initial'], {
         cwd: payloadDir,
         shell: true,
         env: {
@@ -875,6 +886,7 @@ export function App({ withTestValues = false, skipToHomePageStep = false, debugS
         <ModeSelection
           onStartNew={handleModeStartNew}
           onDelete={handleModeDelete}
+          onDataManagement={handleModeDataManagement}
         />
       )}
 
@@ -885,6 +897,15 @@ export function App({ withTestValues = false, skipToHomePageStep = false, debugS
           githubToken={credentials.githubToken}
           onComplete={handleDeleteComplete}
           onCancel={handleDeleteCancel}
+        />
+      )}
+
+      {/* Data Management */}
+      {step === 'data-management' && credentials && (
+        <DataManagement
+          railwayToken={credentials.railwayToken}
+          onComplete={handleDataManagementComplete}
+          onCancel={handleDataManagementCancel}
         />
       )}
 

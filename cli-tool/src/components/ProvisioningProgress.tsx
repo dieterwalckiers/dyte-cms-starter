@@ -12,7 +12,7 @@ export function ProvisioningProgress({
 }: ProvisioningProgressProps): React.ReactElement {
   return (
     <Box flexDirection="column">
-      <Text bold>Creating project...</Text>
+      <Text bold>Creating project... sit back, this can take a while</Text>
       <Text> </Text>
       {steps.map((step, idx) => (
         <Box key={idx} flexDirection="column">

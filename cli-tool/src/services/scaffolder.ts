@@ -279,7 +279,7 @@ export default buildConfig({
     join(collectionsDir, 'Pages.ts'),
     `import type { CollectionConfig } from 'payload'
 import { triggerDeploy } from '../hooks/triggerDeploy'
-import { Hero, RichText } from '../blocks'
+import { Hero, RichText, SplitTextImage } from '../blocks'
 
 export const Pages: CollectionConfig = {
   slug: 'pages',
@@ -336,7 +336,7 @@ export const Pages: CollectionConfig = {
     {
       name: 'content',
       type: 'blocks',
-      blocks: [Hero, RichText],
+      blocks: [Hero, RichText, SplitTextImage],
       admin: {
         description: 'Add and arrange content blocks for this page',
       },
@@ -456,7 +456,6 @@ export const Hero: Block = {
     singular: 'Hero',
     plural: 'Heroes',
   },
-  imageURL: '/assets/blocks/hero.png',
   fields: [
     {
       name: 'headline',
@@ -554,9 +553,68 @@ export const RichText: Block = {
   )
 
   writeFileSync(
+    join(blocksDir, 'SplitTextImage.ts'),
+    `import type { Block } from 'payload'
+
+export const SplitTextImage: Block = {
+  slug: 'splitTextImage',
+  labels: {
+    singular: 'Split Text + Image',
+    plural: 'Split Text + Image',
+  },
+  fields: [
+    {
+      name: 'text',
+      type: 'richText',
+      required: true,
+      admin: {
+        description: 'Title and description text (use headings for the title)',
+      },
+    },
+    {
+      name: 'buttons',
+      type: 'array',
+      admin: {
+        description: 'Call-to-action buttons',
+      },
+      fields: [
+        {
+          name: 'caption',
+          type: 'text',
+          required: true,
+          admin: {
+            description: 'Button text',
+          },
+        },
+        {
+          name: 'link',
+          type: 'text',
+          required: true,
+          admin: {
+            description: 'URL or path (e.g., /contact or https://example.com)',
+          },
+        },
+      ],
+    },
+    {
+      name: 'image',
+      type: 'upload',
+      relationTo: 'media',
+      required: true,
+      admin: {
+        description: 'Poster image (displayed in 5:6 portrait ratio)',
+      },
+    },
+  ],
+}
+`
+  )
+
+  writeFileSync(
     join(blocksDir, 'index.ts'),
     `export { Hero } from './Hero'
 export { RichText } from './RichText'
+export { SplitTextImage } from './SplitTextImage'
 `
   )
 
@@ -614,18 +672,19 @@ export async function triggerDeploy(collectionSlug: string): Promise<void> {
 WORKDIR /app
 
 RUN apk add --no-cache libc6-compat
+RUN corepack enable && corepack prepare pnpm@9 --activate
 
-COPY package*.json ./
-RUN npm install
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 
 COPY . .
 
 # Generate import map for Payload admin UI (lexical editor components)
-RUN npx payload generate:importmap
+RUN pnpm exec payload generate:importmap
 
 EXPOSE 3000
 
-CMD ["npm", "run", "dev"]
+CMD ["pnpm", "run", "dev"]
 `
   )
 
@@ -633,14 +692,15 @@ CMD ["npm", "run", "dev"]
   writeFileSync(
     join(payloadDir, 'Dockerfile'),
     `FROM node:22-alpine AS base
+RUN corepack enable && corepack prepare pnpm@9 --activate
 
 # Install dependencies only when needed
 FROM base AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm ci
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 
 # Build the application
 FROM base AS builder
@@ -651,7 +711,7 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 
-RUN npm run build
+RUN pnpm run build
 
 # Production image
 FROM base AS runner
@@ -683,7 +743,7 @@ ENV HOSTNAME="0.0.0.0"
 EXPOSE 3000
 
 # Run migrations then start the app on Railway's PORT
-CMD ["sh", "-c", "npm run migrate && npm run start -- -p \${PORT:-3000}"]
+CMD ["sh", "-c", "pnpm run migrate && pnpm run start -- -p \${PORT:-3000}"]
 `
   )
 
@@ -694,13 +754,13 @@ CMD ["sh", "-c", "npm run migrate && npm run start -- -p \${PORT:-3000}"]
 nixPkgs = ["nodejs_22"]
 
 [phases.install]
-cmds = ["npm ci"]
+cmds = ["corepack enable && corepack prepare pnpm@9 --activate && pnpm install --frozen-lockfile"]
 
 [phases.build]
-cmds = ["npm run build"]
+cmds = ["pnpm run build"]
 
 [start]
-cmd = "npm run migrate && npm start"
+cmd = "pnpm run migrate && pnpm start"
 `
   )
 
@@ -903,6 +963,7 @@ async function generateWebFiles(
   const pagesDir = join(appDir, 'pages')
   const componentsDir = join(appDir, 'components')
   const blocksComponentsDir = join(componentsDir, 'blocks')
+  const uiComponentsDir = join(componentsDir, 'ui')
   const composablesDir = join(appDir, 'composables')
   const layoutsDir = join(appDir, 'layouts')
   const typesDir = join(appDir, 'types')
@@ -913,6 +974,7 @@ async function generateWebFiles(
   mkdirSync(pagesDir, { recursive: true })
   mkdirSync(componentsDir, { recursive: true })
   mkdirSync(blocksComponentsDir, { recursive: true })
+  mkdirSync(uiComponentsDir, { recursive: true })
   mkdirSync(composablesDir, { recursive: true })
   mkdirSync(layoutsDir, { recursive: true })
   mkdirSync(typesDir, { recursive: true })
@@ -932,11 +994,11 @@ async function generateWebFiles(
       generate: 'nuxt generate',
       preview: 'nuxt preview',
       postinstall: 'nuxt prepare',
-      storybook: 'storybook dev -p 6006',
+      storybook: 'storybook dev -p 6006 --no-open',
       'build-storybook': 'storybook build',
     },
     dependencies: {
-      '@nuxt/ui-pro': '^1',
+      '@nuxt/ui': '^4',
       nuxt: '^4.2.2',
       vue: '^3.5.0',
       'vue-router': '^4.5.0',
@@ -944,43 +1006,51 @@ async function generateWebFiles(
     devDependencies: {
       '@chromatic-com/storybook': '^4.1.3',
       '@nuxt/fonts': '^0.11.0',
-      '@nuxtjs/storybook': '^9.1.0-29411911.f34c865',
-      '@storybook/addon-a11y': '^10.1.10',
-      '@storybook/addon-docs': '^10.1.10',
-      '@storybook/addon-vitest': '^10.1.10',
+      '@nuxtjs/storybook': '^9.0.1',
+      '@storybook-vue/nuxt': '^9.0.1',
+      '@storybook/addon-a11y': '^9.0.18',
+      '@storybook/addon-docs': '^9.0.18',
       '@types/node': '^22',
       '@vitejs/plugin-vue': '^6.0.3',
       '@vitest/browser-playwright': '^4.0.16',
       '@vitest/coverage-v8': '^4.0.16',
-      autoprefixer: '^10.4.23',
       concurrently: '^9.2.1',
       playwright: '^1.57.0',
-      storybook: '^10.1.10',
-      tailwindcss: '^3.4.19',
+      storybook: '^9.0.18',
+      tailwindcss: '^4',
       vitest: '^4.0.16',
     },
-    overrides: {
-      'storybook': '^10.1.10',
-      '@storybook/builder-vite': '^10.1.10',
-      '@storybook/vue3': '^10.1.10',
-      '@storybook/vue3-vite': '^10.1.10',
-      '@storybook/csf-plugin': '^10.1.10'
-    }
+    overrides: {}
   }
   writeFileSync(
     join(webDir, 'package.json'),
     JSON.stringify(webPackageJson, null, 2)
   )
 
+  // .npmrc for pnpm peer dependency handling
+  writeFileSync(
+    join(webDir, '.npmrc'),
+    `auto-install-peers=true
+strict-peer-dependencies=false
+`
+  )
+
   // nuxt.config.ts
-  // Only add app.baseURL if there's a path (e.g., "/blog" for "https://example.com/blog")
-  const baseURLConfig = context.websitePath
-    ? `
+  // Handle baseURL for both Storybook and production
+  const baseURLPath = context.websitePath || `/${context.projectSlug}`
+  const baseURLConfig = `
   app: {
-    baseURL: '${context.websitePath}/',
+    // Use root path for Storybook, custom path for production
+    baseURL: process.env.STORYBOOK === 'true' ? '/' : '${baseURLPath}/',
+  },
+
+  // Disable app manifest for Storybook (not supported)
+  // Disable shared prerender data to prevent page content from being cached incorrectly during SSG
+  experimental: {
+    appManifest: process.env.STORYBOOK !== 'true',
+    sharedPrerenderData: false,
   },
 `
-    : ''
 
   writeFileSync(
     join(webDir, 'nuxt.config.ts'),
@@ -989,8 +1059,8 @@ export default defineNuxtConfig({
   compatibilityDate: '2025-01-01',
   devtools: { enabled: true },
 
-  extends: ['@nuxt/ui-pro'],
   modules: ['@nuxt/ui', '@nuxt/fonts'],
+  css: ['~/assets/css/main.css'],
 
   fonts: {
     families: [
@@ -1026,7 +1096,7 @@ ${baseURLConfig}
   devServer: {
     host: '0.0.0.0',
     port: 3000
-  }
+  },
 })
 `
   )
@@ -1039,15 +1109,16 @@ ${baseURLConfig}
 WORKDIR /app
 
 RUN apk add --no-cache libc6-compat
+RUN corepack enable && corepack prepare pnpm@9 --activate
 
-COPY package*.json ./
-RUN npm install
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 
 COPY . .
 
 EXPOSE 3000
 
-CMD ["npm", "run", "dev"]
+CMD ["pnpm", "run", "dev"]
 `
   )
 
@@ -1110,8 +1181,22 @@ export interface RichTextBlock {
   content: unknown
 }
 
+export interface SplitTextImageButton {
+  id?: string
+  caption: string
+  link: string
+}
+
+export interface SplitTextImageBlock {
+  id: string
+  blockType: 'splitTextImage'
+  text: unknown // Rich text content (Lexical format)
+  buttons?: SplitTextImageButton[]
+  image?: Media | string
+}
+
 // Union type for all block types - add more as they are created
-export type ContentBlock = HeroBlock | RichTextBlock
+export type ContentBlock = HeroBlock | RichTextBlock | SplitTextImageBlock
 `
   )
 
@@ -1198,7 +1283,11 @@ export function useMenuPages() {
   const apiUrl = usePayloadApiUrl()
   const result = useFetch<PagesResponse>(\`\${apiUrl}/pages\`, {
     query: {
-      'where[showInMenu][equals]': 'true',
+      where: {
+        showInMenu: {
+          equals: true
+        }
+      },
       sort: 'menuOrder',
       limit: 100
     },
@@ -1219,7 +1308,11 @@ export function usePage(slug: MaybeRefOrGetter<string>) {
 
   const result = useFetch<PagesResponse>(\`\${apiUrl}/pages\`, {
     query: {
-      'where[slug][equals]': slugValue,
+      where: {
+        slug: {
+          equals: slugValue
+        }
+      },
       limit: 1
     },
     key: \`page-\${slugValue}\`,
@@ -1239,9 +1332,40 @@ export function usePage(slug: MaybeRefOrGetter<string>) {
   writeFileSync(
     join(appDir, 'app.vue'),
     `<template>
-  <NuxtLayout>
-    <NuxtPage :key="$route.fullPath" />
-  </NuxtLayout>
+  <UApp>
+    <TheHeader />
+
+    <UMain>
+      <NuxtLayout>
+        <NuxtPage :key="$route.fullPath" />
+      </NuxtLayout>
+    </UMain>
+
+    <TheFooter />
+  </UApp>
+</template>
+`
+  )
+
+  // error.vue
+  writeFileSync(
+    join(appDir, 'error.vue'),
+    `<script setup lang="ts">
+import type { NuxtError } from '#app'
+
+const props = defineProps<{
+  error: NuxtError
+}>()
+</script>
+
+<template>
+  <UApp>
+    <TheHeader />
+
+    <UError :error="error" />
+
+    <TheFooter />
+  </UApp>
 </template>
 `
   )
@@ -1251,8 +1375,15 @@ export function usePage(slug: MaybeRefOrGetter<string>) {
     join(appDir, 'app.config.ts'),
     `export default defineAppConfig({
   ui: {
-    primary: 'primary',
-    gray: 'gray',
+    colors: {
+      primary: 'primary',
+      neutral: 'slate',
+    },
+    button: {
+      slots: {
+        base: 'rounded-[var(--radius-button)] font-medium inline-flex items-center disabled:cursor-not-allowed aria-disabled:cursor-not-allowed disabled:opacity-75 aria-disabled:opacity-75 transition-colors',
+      },
+    },
   },
 })
 `
@@ -1262,18 +1393,7 @@ export function usePage(slug: MaybeRefOrGetter<string>) {
   writeFileSync(
     join(layoutsDir, 'default.vue'),
     `<template>
-  <div class="min-h-screen flex flex-col font-sans">
-    <TheHeader />
-    <main class="flex-1">
-      <slot />
-    </main>
-    <UContainer>
-      <UDivider />
-      <footer class="py-6 text-center text-neutral-500">
-        <p>&copy; {{ new Date().getFullYear() }} ${context.projectName}</p>
-      </footer>
-    </UContainer>
-  </div>
+  <slot />
 </template>
 `
   )
@@ -1284,20 +1404,89 @@ export function usePage(slug: MaybeRefOrGetter<string>) {
     `<script setup lang="ts">
 import type { PagesResponse } from '~/types/page'
 
+interface NavItem {
+  label: string
+  to: string
+  active?: boolean
+}
+
+const route = useRoute()
 const apiUrl = usePayloadApiUrl()
 
 const { data: response } = await useFetch<PagesResponse>(\`\${apiUrl}/pages\`, {
   query: {
-    'where[showInMenu][equals]': 'true',
+    where: {
+      showInMenu: {
+        equals: true
+      }
+    },
     sort: 'menuOrder',
     limit: 100
   },
   key: 'menuPages',
+  dedupe: 'defer',
   timeout: 10000,
   retry: 1,
 })
 
-const navLinks = computed(() => {
+const navItems = computed<NavItem[]>(() => {
+  const pages = response.value?.docs ?? []
+  return pages.map((page) => ({
+    label: page.title,
+    to: \`/\${page.slug}\`,
+    active: route.path === \`/\${page.slug}\`,
+  }))
+})
+</script>
+
+<template>
+  <UHeader>
+    <template #title>
+      <NuxtLink to="/" class="text-xl font-bold font-display">
+        ${context.projectName}
+      </NuxtLink>
+    </template>
+
+    <UNavigationMenu :items="navItems" />
+
+    <template #body>
+      <UNavigationMenu :items="navItems" orientation="vertical" class="-mx-2.5" />
+    </template>
+  </UHeader>
+</template>
+`
+  )
+
+  // components/TheFooter.vue
+  writeFileSync(
+    join(componentsDir, 'TheFooter.vue'),
+    `<script setup lang="ts">
+import type { PagesResponse } from '~/types/page'
+
+interface NavItem {
+  label: string
+  to: string
+}
+
+const apiUrl = usePayloadApiUrl()
+
+const { data: response } = await useFetch<PagesResponse>(\`\${apiUrl}/pages\`, {
+  query: {
+    where: {
+      showInMenu: {
+        equals: true
+      }
+    },
+    sort: 'menuOrder',
+    limit: 100
+  },
+  key: 'menuPages',
+  dedupe: 'defer',
+  timeout: 10000,
+  retry: 1,
+})
+
+const footerLinks = computed<NavItem[]>(() => {
   const pages = response.value?.docs ?? []
   return pages.map((page) => ({
     label: page.title,
@@ -1307,17 +1496,17 @@ const navLinks = computed(() => {
 </script>
 
 <template>
-  <UHeader>
+  <USeparator />
+
+  <UFooter>
     <template #left>
-      <NuxtLink to="/" class="text-xl font-bold font-display">
-        ${context.projectName}
-      </NuxtLink>
+      <p class="text-muted text-sm">
+        &copy; {{ new Date().getFullYear() }} ${context.projectName}
+      </p>
     </template>
 
-    <template #right>
-      <UHorizontalNavigation :links="navLinks" />
-    </template>
-  </UHeader>
+    <UNavigationMenu :items="footerLinks" variant="link" />
+  </UFooter>
 </template>
 `
   )
@@ -1567,14 +1756,18 @@ import type { Page, PagesResponse } from '~/types/page'
 
 const apiUrl = usePayloadApiUrl()
 
-const { data: response } = await useFetch<PagesResponse>(\`\${apiUrl}/pages\`, {
-  key: 'page-home',
-  query: {
-    'where[slug][equals]': 'home',
-    limit: 1,
-    depth: 2, // Populate relationships like backgroundImage
-  },
-})
+// Use native fetch to avoid $fetch caching issues during SSG
+const { data: response } = await useAsyncData(
+  'page-index-home',
+  async () => {
+    const url = new URL(\`\${apiUrl}/pages\`)
+    url.searchParams.set('where[slug][equals]', 'home')
+    url.searchParams.set('limit', '1')
+    url.searchParams.set('depth', '2')
+    const res = await fetch(url.toString())
+    return res.json() as Promise<PagesResponse>
+  }
+)
 
 const page = computed<Page | null>(() => response.value?.docs?.[0] || null)
 </script>
@@ -1614,20 +1807,40 @@ import type { Page, PagesResponse } from '~/types/page'
 const route = useRoute()
 const apiUrl = usePayloadApiUrl()
 
-// Get slug from route params
+// Get slug from route params - handle array (catch-all) or string
 const slugParam = route.params.slug
-const slug = Array.isArray(slugParam) ? slugParam.join('/') : slugParam || 'home'
+const slugParts = Array.isArray(slugParam) ? slugParam : slugParam ? [slugParam] : []
+const slug = slugParts.join('/')
 
-const { data: response, error } = await useFetch<PagesResponse>(\`\${apiUrl}/pages\`, {
-  key: \`page-\${slug}\`,
-  query: {
-    'where[slug][equals]': slug,
-    limit: 1,
-    depth: 2,
-  },
-})
+// If slug is empty, this route shouldn't handle it (index.vue handles /)
+// But during SSG this can happen, so redirect to home
+if (!slug) {
+  await navigateTo('/', { replace: true })
+}
+
+// Use native fetch to avoid $fetch caching issues during SSG
+const { data: response, error } = await useAsyncData(
+  \`page-\${slug}\`,
+  async () => {
+    const url = new URL(\`\${apiUrl}/pages\`)
+    url.searchParams.set('where[slug][equals]', slug)
+    url.searchParams.set('limit', '1')
+    url.searchParams.set('depth', '2')
+    const res = await fetch(url.toString())
+    return res.json() as Promise<PagesResponse>
+  }
+)
 
 const page = computed<Page | null>(() => response.value?.docs?.[0] || null)
+
+// Show 404 error if page not found
+if (!page.value && !error.value) {
+  throw createError({
+    statusCode: 404,
+    statusMessage: 'Page Not Found',
+    message: \`The page "\${slug}" could not be found.\`,
+  })
+}
 </script>
 
 <template>
@@ -1646,105 +1859,57 @@ const page = computed<Page | null>(() => response.value?.docs?.[0] || null)
 `
   )
 
-  // tailwind.config.js
-  writeFileSync(
-    join(webDir, 'tailwind.config.js'),
-    `/** @type {import('tailwindcss').Config} */
-export default {
-  content: [
-    './app/components/**/*.{vue,js,ts}',
-    './app/layouts/**/*.vue',
-    './app/pages/**/*.vue',
-    './app/app.vue',
-  ],
-  // Safelist classes used in dynamic rich text rendering
-  safelist: [
-    'max-w-[400px]',
-    'max-w-[600px]',
-    'max-w-[900px]',
-    'max-w-full',
-    'mr-auto',
-    'ml-auto',
-    'mx-auto',
-  ],
-  theme: {
-    extend: {
-      fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
-        display: ['Playfair Display', 'Georgia', 'serif'],
-      },
-      colors: {
-        // Primary brand colors
-        primary: {
-          50: '#eef2ff',
-          100: '#e0e7ff',
-          200: '#c7d2fe',
-          300: '#a5b4fc',
-          400: '#818cf8',
-          500: '#6366f1',
-          600: '#4f46e5',
-          700: '#4338ca',
-          800: '#3730a3',
-          900: '#312e81',
-          950: '#1e1b4b',
-        },
-        // Neutral/gray scale
-        gray: {
-          50: '#f8fafc',
-          100: '#f1f5f9',
-          200: '#e2e8f0',
-          300: '#cbd5e1',
-          400: '#94a3b8',
-          500: '#64748b',
-          600: '#475569',
-          700: '#334155',
-          800: '#1e293b',
-          900: '#0f172a',
-          950: '#020617',
-        },
-        // Semantic colors
-        success: {
-          50: '#f0fdf4',
-          100: '#dcfce7',
-          500: '#22c55e',
-          600: '#16a34a',
-          700: '#15803d',
-        },
-        warning: {
-          50: '#fffbeb',
-          100: '#fef3c7',
-          500: '#f59e0b',
-          600: '#d97706',
-          700: '#b45309',
-        },
-        error: {
-          50: '#fef2f2',
-          100: '#fee2e2',
-          500: '#ef4444',
-          600: '#dc2626',
-          700: '#b91c1c',
-        },
-        info: {
-          50: '#eff6ff',
-          100: '#dbeafe',
-          500: '#3b82f6',
-          600: '#2563eb',
-          700: '#1d4ed8',
-        },
-      },
-    },
-  },
-  plugins: [],
-}
-`
-  )
-
-  // assets/css/main.css
+  // assets/css/main.css (Tailwind v4 syntax)
   writeFileSync(
     join(assetsDir, 'main.css'),
-    `@tailwind base;
-@tailwind components;
-@tailwind utilities;
+    `@import "tailwindcss";
+@import "@nuxt/ui";
+
+@theme {
+  /* Font families */
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-display: "Playfair Display", Georgia, serif;
+
+  /* Component styling */
+  --radius-button: .7rem;
+
+  --color-brandprimarymedium: #f15b4e;
+  --color-brandprimarydark: #6b081d;
+  --color-brandprimaryverydark: #373031;
+  --color-brandsecondarylight: #efebe7;
+  --color-brandsecondarymedium: #e3cac0;
+  --color-brandsecondarymedium2: #7c9198;
+
+  --color-warning-50: #fffbeb;
+  --color-warning-100: #fef3c7;
+  --color-warning-500: #f59e0b;
+  --color-warning-600: #d97706;
+  --color-warning-700: #b45309;
+
+  --color-error-50: #fef2f2;
+  --color-error-100: #fee2e2;
+  --color-error-500: #ef4444;
+  --color-error-600: #dc2626;
+  --color-error-700: #b91c1c;
+
+  --color-info-50: #eff6ff;
+  --color-info-100: #dbeafe;
+  --color-info-500: #3b82f6;
+  --color-info-600: #2563eb;
+  --color-info-700: #1d4ed8;
+
+  /* Typography */
+  --color-font: #1a1918;
+
+  /* Accent */
+  --color-accent: #8B5A4A;
+}
+
+@source "../../../app/components/**/*.vue";
+@source "../../../app/layouts/**/*.vue";
+@source "../../../app/pages/**/*.vue";
+@source "../../../app/app.vue";
+@source "../../../app/app.config.ts";
 `
   )
 
@@ -1778,6 +1943,7 @@ defineProps<{
     <template v-for="block in blocks" :key="block.id">
       <BlocksHeroBlock v-if="block.blockType === 'hero'" :block="block" />
       <BlocksRichTextBlock v-else-if="block.blockType === 'richText'" :block="block" />
+      <BlocksSplitTextImage v-else-if="block.blockType === 'splitTextImage'" :block="block" />
     </template>
   </div>
 </template>
@@ -1863,6 +2029,134 @@ defineProps<{
   <div class="prose prose-lg max-w-none">
     <RichTextRenderer :content="block.content" />
   </div>
+</template>
+`
+  )
+
+  // components/blocks/SplitTextImage.vue
+  writeFileSync(
+    join(blocksComponentsDir, 'SplitTextImage.vue'),
+    `<script setup lang="ts">
+import type { SplitTextImageBlock } from '~/types/blocks'
+
+const props = defineProps<{
+  block: SplitTextImageBlock
+}>()
+
+const imageUrl = computed(() => {
+  if (!props.block.image) return undefined
+  if (typeof props.block.image === 'string') return undefined
+  return useMediaUrl(props.block.image.url)
+})
+
+const imageAlt = computed(() => {
+  if (!props.block.image || typeof props.block.image === 'string') return ''
+  return props.block.image.alt || ''
+})
+</script>
+
+<template>
+  <section class="flex items-start">
+    <!-- Left: Text content -->
+    <div class="w-[55%] pr-8 pt-1">
+      <!-- Rich text content with custom styling for this block -->
+      <div class="split-text-image-content">
+        <RichTextRenderer :content="block.text" />
+      </div>
+
+      <!-- CTA Buttons -->
+      <div v-if="block.buttons?.length" class="flex flex-wrap gap-4 mt-10">
+        <UiButtonOutline
+          v-for="(button, index) in block.buttons"
+          :key="button.id || index"
+          :to="button.link"
+        >
+          {{ button.caption }}
+        </UiButtonOutline>
+      </div>
+    </div>
+
+    <!-- Right: Image (poster) -->
+    <div class="w-[42%] pl-4">
+      <div
+        v-if="imageUrl"
+        class="aspect-[5/6] overflow-hidden"
+      >
+        <img
+          :src="imageUrl"
+          :alt="imageAlt"
+          class="w-full h-full object-cover"
+        />
+      </div>
+      <div
+        v-else
+        class="bg-gray-200 aspect-[5/6] flex items-center justify-center text-gray-400"
+      >
+        Image
+      </div>
+    </div>
+  </section>
+</template>
+
+<style scoped>
+/* Override default RichTextRenderer styles for this block */
+.split-text-image-content :deep(h1),
+.split-text-image-content :deep(h2) {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 40px;
+  font-weight: 500;
+  line-height: 1.15;
+  margin-bottom: 2rem;
+  color: var(--color-font);
+}
+
+.split-text-image-content :deep(p) {
+  font-size: 15px;
+  line-height: 1.8;
+  color: color-mix(in srgb, var(--color-font) 70%, transparent);
+  margin-bottom: 0;
+}
+
+.split-text-image-content :deep(.prose) {
+  max-width: none;
+}
+</style>
+`
+  )
+
+  // components/ui/ButtonOutline.vue
+  writeFileSync(
+    join(uiComponentsDir, 'ButtonOutline.vue'),
+    `<script setup lang="ts">
+interface Props {
+  to?: string
+  href?: string
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  to: undefined,
+  href: undefined,
+})
+
+const isLink = computed(() => props.to || props.href)
+</script>
+
+<template>
+  <NuxtLink
+    v-if="isLink"
+    :to="to"
+    :href="href"
+    class="inline-block border border-accent text-accent font-medium py-2.5 px-6 rounded-full hover:bg-accent hover:text-white transition-colors text-[15px]"
+  >
+    <slot />
+  </NuxtLink>
+  <button
+    v-else
+    type="button"
+    class="inline-block border border-accent text-accent font-medium py-2.5 px-6 rounded-full hover:bg-accent hover:text-white transition-colors text-[15px]"
+  >
+    <slot />
+  </button>
 </template>
 `
   )
@@ -1979,14 +2273,12 @@ export const MinimalHeadlineOnly: Story = {
     `import type { StorybookConfig } from '@storybook-vue/nuxt';
 
 const config: StorybookConfig = {
-  stories: [
-    '../app/components/**/*.stories.@(js|jsx|mjs|ts|tsx)',
-  ],
-  addons: [
-    '@storybook/addon-a11y',
-    '@storybook/addon-docs',
-  ],
+  stories: ['../app/components/**/*.stories.@(js|jsx|mjs|ts|tsx)'],
+  addons: ['@storybook/addon-a11y', '@storybook/addon-docs'],
   framework: '@storybook-vue/nuxt',
+  core: {
+    disableTelemetry: true,
+  },
 };
 
 export default config;
@@ -2017,13 +2309,13 @@ const preview: Preview = {
       },
     },
     backgrounds: {
-      default: 'light',
-      values: [
-        { name: 'light', value: '#ffffff' },
-        { name: 'dark', value: '#1a1a1a' },
-      ],
+      options: {
+        light: { name: 'light', value: '#ffffff' },
+        dark: { name: 'dark', value: '#1a1a1a' }
+      }
     },
   },
+
   globalTypes: {
     viewport: {
       toolbar: {
@@ -2042,6 +2334,7 @@ const preview: Preview = {
       },
     },
   },
+
   decorators: [
     (story, context) => {
       const viewport = context.globals.viewport
@@ -2070,6 +2363,12 @@ const preview: Preview = {
       }
     },
   ],
+
+  initialGlobals: {
+    backgrounds: {
+      value: 'light'
+    }
+  }
 };
 
 export default preview;
@@ -2145,9 +2444,12 @@ async function generateRootFiles(
     build:
       context: ./web
       dockerfile: Dockerfile
-    command: npm run storybook
+    command: pnpm exec storybook dev -p 6006 --host 0.0.0.0 --no-open
     ports:
       - "6006:6006"
+    environment:
+      - STORYBOOK=true
+      - NODE_ENV=development
     volumes:
       - ./web/app/pages:/app/app/pages
       - ./web/app/components:/app/app/components
@@ -2263,6 +2565,18 @@ dist/
 Thumbs.db
 `
   )
+
+  // db-reset.sh
+  writeFileSync(
+    join(targetDir, 'db-reset.sh'),
+    `#!/bin/bash
+# Reset the Payload database (drops all data)
+echo "Resetting database..."
+docker compose exec postgres psql -U payload -d payload -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+echo "Database reset complete. Restart payload to recreate schema:"
+echo "  docker compose restart payload"
+`
+  )
 }
 
 async function generateGithubWorkflow(targetDir: string): Promise<void> {
@@ -2296,23 +2610,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: web/package-lock.json
+          cache: 'pnpm'
+          cache-dependency-path: web/pnpm-lock.yaml
 
       - name: Install dependencies
         working-directory: web
-        run: npm install
+        run: pnpm install --frozen-lockfile
 
       - name: Generate static site
         working-directory: web
         env:
+          # Both needed: PAYLOAD_API_URL for server-side rendering, NUXT_PUBLIC_PAYLOAD_API_URL for client
+          PAYLOAD_API_URL: \${{ secrets.PAYLOAD_API_URL }}
           NUXT_PUBLIC_PAYLOAD_API_URL: \${{ secrets.PAYLOAD_API_URL }}
           NODE_OPTIONS: '--max-old-space-size=8192'
-        run: npm run generate
+        run: pnpm run generate
 
       - name: Deploy to FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5

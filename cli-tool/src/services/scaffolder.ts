@@ -483,6 +483,30 @@ export const SiteSettings: GlobalConfig = {
         description: 'Site logo image. If set, this will be displayed in the header instead of the site title',
       },
     },
+    {
+      name: 'styling',
+      type: 'group',
+      label: 'Styling',
+      admin: {
+        description: 'Visual styling options for your website',
+      },
+      fields: [
+        {
+          name: 'headerMenuAlignment',
+          type: 'select',
+          label: 'Header Menu Alignment',
+          defaultValue: 'right',
+          options: [
+            { label: 'Left', value: 'left' },
+            { label: 'Center', value: 'center' },
+            { label: 'Right', value: 'right' },
+          ],
+          admin: {
+            description: 'Horizontal alignment of the navigation menu in the header',
+          },
+        },
+      ],
+    },
   ],
 }
 `
@@ -1448,10 +1472,17 @@ export interface MediaSize {
     join(typesDir, 'siteSettings.ts'),
     `import type { Media } from './media'
 
+export type HeaderMenuAlignment = 'left' | 'center' | 'right'
+
+export interface SiteStyling {
+  headerMenuAlignment?: HeaderMenuAlignment
+}
+
 export interface SiteSettings {
   id: string
   siteTitle: string
   logo?: Media | string
+  styling?: SiteStyling
   createdAt: string
   updatedAt: string
 }
@@ -1647,6 +1678,7 @@ const props = defineProps<{
     `<script setup lang="ts">
 import type { PagesResponse } from '~/types/page'
 import type { Media } from '~/types/media'
+import type { HeaderMenuAlignment } from '~/types/siteSettings'
 
 interface NavItem {
   label: string
@@ -1686,6 +1718,10 @@ const logoUrl = computed(() => {
   return useMediaUrl((logo as Media).url)
 })
 
+const menuAlignment = computed<HeaderMenuAlignment>(() => {
+  return siteSettings.value?.styling?.headerMenuAlignment ?? 'right'
+})
+
 const navItems = computed<NavItem[]>(() => {
   const pages = response.value?.docs ?? []
   return pages.map((page) => ({
@@ -1699,20 +1735,27 @@ const navItems = computed<NavItem[]>(() => {
 <template>
   <UHeader>
     <template #title>
-      <NuxtLink to="/" class="flex items-center">
-        <img
-          v-if="logoUrl"
-          :src="logoUrl"
-          :alt="siteTitle"
-          class="h-8 w-auto"
-        />
-        <span v-else class="text-xl font-bold font-display">
-          {{ siteTitle }}
-        </span>
-      </NuxtLink>
+      <div class="flex items-center gap-6">
+        <NuxtLink to="/" class="flex items-center">
+          <img
+            v-if="logoUrl"
+            :src="logoUrl"
+            :alt="siteTitle"
+            class="h-8 w-auto"
+          />
+          <span v-else class="text-xl font-bold font-display">
+            {{ siteTitle }}
+          </span>
+        </NuxtLink>
+        <UNavigationMenu v-if="menuAlignment === 'left'" :items="navItems" class="hidden lg:flex" />
+      </div>
     </template>
 
-    <UNavigationMenu :items="navItems" />
+    <UNavigationMenu v-if="menuAlignment === 'center'" :items="navItems" />
+
+    <template #right>
+      <UNavigationMenu v-if="menuAlignment === 'right'" :items="navItems" />
+    </template>
 
     <template #body>
       <UNavigationMenu :items="navItems" orientation="vertical" class="-mx-2.5" />

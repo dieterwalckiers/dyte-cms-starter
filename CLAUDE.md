@@ -21,6 +21,13 @@ cd cli-tool && pnpm run dev        # Run CLI
 cd cli-tool && pnpm run typecheck  # Type check
 ```
 
+## Development Workflow
+
+The regular workflow for making changes:
+
+1. **First, update `cli-tool/safeandbrave/`** - This is an example output of the CLI tool. Make and test (or have the user test) changes here to assess and validate them.
+2. **Then, update the cli-tool** - Once the change is validated in `safeandbrave/`, port the change to the cli-tool's templates so newly scaffolded projects will include it.
+
 ## Generated Project Structure
 
 When the CLI runs successfully, it creates a project with this structure:

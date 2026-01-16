@@ -31,5 +31,4 @@
 **/*.temp
 **/.cache/
 
-cli-tool/safeandbrave
 cli-tool/safeandbrave_1

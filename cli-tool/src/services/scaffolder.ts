@@ -37,6 +37,8 @@ async function generatePayloadFiles(
   const collectionsDir = join(srcDir, 'collections')
   const blocksDir = join(srcDir, 'blocks')
   const hooksDir = join(srcDir, 'hooks')
+  const featuresDir = join(srcDir, 'features')
+  const gradientTextFeatureDir = join(featuresDir, 'gradient-text')
   const migrationsDir = join(srcDir, 'migrations')
   const appDir = join(srcDir, 'app', '(payload)')
 
@@ -44,6 +46,7 @@ async function generatePayloadFiles(
   mkdirSync(collectionsDir, { recursive: true })
   mkdirSync(blocksDir, { recursive: true })
   mkdirSync(hooksDir, { recursive: true })
+  mkdirSync(gradientTextFeatureDir, { recursive: true })
   mkdirSync(migrationsDir, { recursive: true })
   mkdirSync(join(appDir, 'admin', '[[...segments]]'), { recursive: true })
   mkdirSync(join(appDir, 'api', '[...slug]'), { recursive: true })
@@ -146,6 +149,7 @@ import { fileURLToPath } from 'url'
 import { buildConfig } from 'payload'
 import { postgresAdapter } from '@payloadcms/db-postgres'
 import { lexicalEditor, UploadFeature } from '@payloadcms/richtext-lexical'
+import { GradientTextFeature } from './features/gradient-text'
 import sharp from 'sharp'
 
 import { Pages } from './collections/Pages'
@@ -173,6 +177,7 @@ export default buildConfig({
   editor: lexicalEditor({
     features: ({ defaultFeatures }) => [
       ...defaultFeatures,
+      GradientTextFeature(),
       UploadFeature({
         collections: {
           media: {
@@ -664,6 +669,154 @@ export async function triggerDeploy(collectionSlug: string): Promise<void> {
 `
   )
 
+  // Gradient Text Feature - Server
+  writeFileSync(
+    join(gradientTextFeatureDir, 'feature.server.ts'),
+    `import { createServerFeature } from '@payloadcms/richtext-lexical'
+
+export const GradientTextFeature = createServerFeature({
+  feature: {
+    ClientFeature:
+      '@/features/gradient-text/feature.client#GradientTextFeatureClient',
+    clientFeatureProps: null,
+  },
+  key: 'gradientText',
+})
+`
+  )
+
+  // Gradient Text Feature - Client
+  writeFileSync(
+    join(gradientTextFeatureDir, 'feature.client.tsx'),
+    `'use client'
+
+import { createClientFeature } from '@payloadcms/richtext-lexical/client'
+import { $patchStyleText } from '@lexical/selection'
+import { $getSelection, $isRangeSelection } from 'lexical'
+
+const GRADIENT_ICON = (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ width: '1em', height: '1em' }}
+  >
+    <defs>
+      <linearGradient id="gradientIcon" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stopColor="#6b081d" />
+        <stop offset="100%" stopColor="#f15b4e" />
+      </linearGradient>
+    </defs>
+    <text
+      x="4"
+      y="17"
+      fontSize="14"
+      fontWeight="bold"
+      fill="url(#gradientIcon)"
+      stroke="none"
+    >
+      G
+    </text>
+    <path d="M4 20h16" stroke="url(#gradientIcon)" strokeWidth="3" />
+  </svg>
+)
+
+export const GradientTextFeatureClient = createClientFeature({
+  toolbarFixed: {
+    groups: [
+      {
+        key: 'gradientText',
+        type: 'buttons',
+        items: [
+          {
+            ChildComponent: () => GRADIENT_ICON,
+            key: 'gradientText',
+            label: 'Gradient Text',
+            onSelect: ({ editor }) => {
+              editor.update(() => {
+                const selection = $getSelection()
+                if ($isRangeSelection(selection)) {
+                  const nodes = selection.getNodes()
+                  let hasGradient = false
+
+                  for (const node of nodes) {
+                    if ('getStyle' in node && typeof node.getStyle === 'function') {
+                      const style = node.getStyle() as string
+                      if (style && style.includes('--gradient-text')) {
+                        hasGradient = true
+                        break
+                      }
+                    }
+                  }
+
+                  if (hasGradient) {
+                    $patchStyleText(selection, { '--gradient-text': null })
+                  } else {
+                    $patchStyleText(selection, { '--gradient-text': '1' })
+                  }
+                }
+              })
+            },
+          },
+        ],
+      },
+    ],
+  },
+  toolbarInline: {
+    groups: [
+      {
+        key: 'gradientText',
+        type: 'buttons',
+        items: [
+          {
+            ChildComponent: () => GRADIENT_ICON,
+            key: 'gradientText',
+            label: 'Gradient Text',
+            onSelect: ({ editor }) => {
+              editor.update(() => {
+                const selection = $getSelection()
+                if ($isRangeSelection(selection)) {
+                  const nodes = selection.getNodes()
+                  let hasGradient = false
+
+                  for (const node of nodes) {
+                    if ('getStyle' in node && typeof node.getStyle === 'function') {
+                      const style = node.getStyle() as string
+                      if (style && style.includes('--gradient-text')) {
+                        hasGradient = true
+                        break
+                      }
+                    }
+                  }
+
+                  if (hasGradient) {
+                    $patchStyleText(selection, { '--gradient-text': null })
+                  } else {
+                    $patchStyleText(selection, { '--gradient-text': '1' })
+                  }
+                }
+              })
+            },
+          },
+        ],
+      },
+    ],
+  },
+})
+`
+  )
+
+  // Gradient Text Feature - Index
+  writeFileSync(
+    join(gradientTextFeatureDir, 'index.ts'),
+    `export { GradientTextFeature } from './feature.server'
+`
+  )
+
   // Dockerfile.dev
   writeFileSync(
     join(payloadDir, 'Dockerfile.dev'),
@@ -900,6 +1053,22 @@ export const POST = GRAPHQL_POST(config)
   writeFileSync(
     join(appDir, 'custom.css'),
     `/* Custom admin styles */
+
+/* Gradient text effect in Lexical rich text editor */
+.LexicalEditorTheme__text [style*="--gradient-text"] {
+  background: linear-gradient(to right, #6b081d, #f15b4e);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Alternative selector for Payload's Lexical editor */
+[data-lexical-editor="true"] [style*="--gradient-text"] {
+  background: linear-gradient(to right, #6b081d, #f15b4e);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
 `
   )
 
@@ -1558,6 +1727,7 @@ interface LexicalNode {
   direction?: string
   version?: number
   text?: string
+  style?: string
   children?: LexicalNode[]
   listType?: 'bullet' | 'number' | 'check'
   checked?: boolean
@@ -1568,6 +1738,12 @@ interface LexicalNode {
   // For upload nodes - value can be list value (number) or media object
   value?: number | Media | string | null
   relationTo?: string
+}
+
+// Check if a style string contains gradient text marker
+function hasGradientText(style: string | undefined): boolean {
+  if (!style) return false
+  return style.includes('--gradient-text')
 }
 
 function renderNode(node: LexicalNode): string {
@@ -1589,6 +1765,12 @@ function renderNode(node: LexicalNode): string {
     if (format & IS_CODE) result = \`<code class="bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded text-sm font-mono">\${result}</code>\`
     if (format & IS_SUBSCRIPT) result = \`<sub>\${result}</sub>\`
     if (format & IS_SUPERSCRIPT) result = \`<sup>\${result}</sup>\`
+
+    // Apply gradient text effect if the style contains the marker
+    if (hasGradientText(node.style)) {
+      result = \`<span class="gradient-text">\${result}</span>\`
+    }
+
     return result
   }
 
@@ -1911,6 +2093,14 @@ if (!page.value && !error.value) {
 @source "../../../app/pages/**/*.vue";
 @source "../../../app/app.vue";
 @source "../../../app/app.config.ts";
+
+/* Gradient text effect for rich text content */
+.gradient-text {
+  background: linear-gradient(to right, var(--color-brandprimarydark), var(--color-brandprimarymedium));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
 `
   )
 
